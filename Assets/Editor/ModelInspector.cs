@@ -595,17 +595,12 @@ namespace UnityEditor
             return 0;
         }
 
-        string GetAttributeString(Mesh mesh, VertexAttribute attr, string txt)
+        string GetAttributeString(VertexAttributeDescriptor attrDescriptor, string txt)
         {
-            if (mesh.HasVertexAttribute(attr))
-            {
-                var format = mesh.GetVertexAttributeFormat(attr);
-                var dimension = mesh.GetVertexAttributeDimension(attr);
-                
-                return String.Format("{0}: {1} x {2} ({3} bytes)", txt, format, dimension, ConvertFormatToSize(format) * dimension);
-            }
-
-            return "";
+            var format = attrDescriptor.format;
+            var dimension = attrDescriptor.dimension;
+            
+            return String.Format("{0}: {1} x {2} ({3} bytes)", txt, format, dimension, ConvertFormatToSize(format) * dimension);
         }
         
         // A minimal list of settings to be shown in the Asset Store preview inspector
@@ -614,55 +609,38 @@ namespace UnityEditor
         //    OnInspectorGUI();
         //}
 
-        long CalcTotalIndices(Mesh mesh)
+        int CalcTotalIndices(Mesh mesh)
         {
-            long totalCount = 0;
+            int totalCount = 0;
             for (int i = 0; i < mesh.subMeshCount; i++)
             {
-                totalCount += mesh.GetIndexCount(i);
+                totalCount += (int)mesh.GetIndexCount(i);
             }
 
             return totalCount;
         }
-        
-        long CalcTotalVertices(Mesh mesh)
+
+        int GetSizePerAttribute(VertexAttributeDescriptor attrDescriptor)
         {
-            long totalCount = 0;
-            for (int i = 0; i < mesh.subMeshCount; i++)
-            {
-                totalCount += mesh.GetSubMesh(i).vertexCount;
-            }
-
-            return totalCount;
-        }
-        
-        int GetSizePerAttribute(Mesh mesh, VertexAttribute attr)
-        {
-            int size = 0;
-
-            var elementSize = ConvertFormatToSize(mesh.GetVertexAttributeFormat(attr));
-            var dimension = mesh.GetVertexAttributeDimension(attr);
-
-            if (mesh.HasVertexAttribute(attr))
-                size += elementSize * dimension;
+            var elementSize = ConvertFormatToSize(attrDescriptor.format);
+            var dimension = attrDescriptor.dimension;
             
-            return size;
+            return elementSize * dimension;
         }
 
-        // overriding the base Editor to avoid drawing unnecessary serialized data -- for now
         public override void OnInspectorGUI()
         {
             GUI.enabled = true;
-            long totalVertices = 0;
 
             if (targets.Length > 1)
             {
-                long totalIndices = 0;
+                int totalVertices = 0;
+                int totalIndices = 0;
                 
                 for (int i = 0; i < targets.Length; i++)
                 {
                     var tempMesh = targets[i] as Mesh;
-                    totalVertices += CalcTotalVertices(tempMesh);
+                    totalVertices += tempMesh.vertexCount;
                     totalIndices += CalcTotalIndices(tempMesh);
                 }
                 GUILayout.Label(String.Format("{0} meshes selected, {1} total vertices, {2} total indices", targets.Length, totalVertices, totalIndices));
@@ -670,13 +648,13 @@ namespace UnityEditor
             }
                 
             Mesh mesh = target as Mesh;
-
+            var attributes = mesh.GetVertexAttributes();
+            
             int size = 0;
-            for (int i = 0; i < 12; i++)
-                size += GetSizePerAttribute(mesh, (VertexAttribute)i);
-
-            totalVertices = CalcTotalVertices(mesh);
-            GUILayout.Label(String.Format("Vertices: {0} vertices ({1})", totalVertices, EditorUtility.FormatBytes(totalVertices * size)), EditorStyles.boldLabel);
+            for (int i = 0; i < attributes.Length; i++)
+                size += GetSizePerAttribute(attributes[i]);
+            
+            GUILayout.Label(String.Format("Vertices: {0} vertices ({1})", mesh.vertexCount, EditorUtility.FormatBytes(mesh.vertexCount * size)), EditorStyles.boldLabel);
 
             GUILayout.BeginHorizontal();
             GUILayout.Space(10);
@@ -689,34 +667,15 @@ namespace UnityEditor
             GUILayout.BeginHorizontal();
             GUILayout.Space(10);
             GUILayout.BeginVertical();
-
-
-            var txt = GetAttributeString(mesh, VertexAttribute.Position, "Position");
-            if(!String.IsNullOrEmpty(txt))
-                GUILayout.Label(txt);
             
-            txt = GetAttributeString(mesh, VertexAttribute.Normal, "Normal");
-            if(!String.IsNullOrEmpty(txt))
-                GUILayout.Label(txt);
-            
-            txt = GetAttributeString(mesh, VertexAttribute.Tangent, "Tangent");
-            if(!String.IsNullOrEmpty(txt))
-                GUILayout.Label(txt);
-            
-            txt = GetAttributeString(mesh, VertexAttribute.Color, "Color");
-            if (!String.IsNullOrEmpty(txt))
+            for (int i = 0; i < attributes.Length; i++)
             {
-                string stream = ", Stream " + mesh.GetVertexAttribute((int)VertexAttribute.Color).stream;
-                GUILayout.Label(txt + stream);
-            }
-
-            int index = 0;
-            for (int i = 4; i < 12; i++)
-            {
-                txt = GetAttributeString(mesh, (VertexAttribute)i, "UV" + index);
+                string title = attributes[i].attribute.ToString();
+                if (title.Contains("TexCoord"))
+                    title = title.Replace("TexCoord", "UV");
+                string txt = GetAttributeString(attributes[i], title);
                 if(!String.IsNullOrEmpty(txt))
                     GUILayout.Label(txt);
-                index++;
             }
             
             GUILayout.Space(5);
@@ -751,7 +710,7 @@ namespace UnityEditor
                     GUI.color = GetSubMeshTint(i);
 
                 int divisor = subMesh.topology == MeshTopology.Quads ? 4 : 3; 
-                GUILayout.Label(String.Format("{0}: {1} indices ({2} {3}) starting from {4}", polygonType, subMesh.indexCount, subMesh.indexCount/divisor, polygonType.ToLower(), subMesh.firstVertex) + baseVertex);
+                GUILayout.Label(String.Format("{0}: {1} indices ({2} {3}) starting from {4}", polygonType, subMesh.indexCount, subMesh.indexCount/divisor, polygonType.ToLower(), subMesh.indexStart) + baseVertex);
                 GUILayout.Label(String.Format("Bounds: center {0}, size {1}", subMesh.bounds.center.ToString("g3"), subMesh.bounds.size.ToString("g3")));
             }
 
