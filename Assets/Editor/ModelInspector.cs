@@ -43,7 +43,7 @@ namespace UnityEditor
         
         private static string[] m_DisplayModes =
         {
-            "Shaded", "UV Checker", "Flat UV",
+            "Shaded", "UV Checker", "UV Layout",
             "Vertex Color", "Normals", "Tangents"
         };
 
@@ -56,7 +56,7 @@ namespace UnityEditor
         {
             Shaded = 0,
             UVChecker = 1,
-            FlatUV = 2,
+            UVLayout = 2,
             VertexColor = 3,
             Normals = 4,
             Tangent = 5
@@ -210,7 +210,7 @@ namespace UnityEditor
 
             activeUVChannel = popupIndex;
             
-            if(displayMode == DisplayMode.FlatUV || displayMode == DisplayMode.UVChecker)
+            if(displayMode == DisplayMode.UVLayout || displayMode == DisplayMode.UVChecker)
                 m_activeMaterial.SetInt("_UVChannel", popupIndex);
         }
         
@@ -232,7 +232,7 @@ namespace UnityEditor
                     m_MeshMultiPreviewMaterial.SetTexture("_MainTex", m_CheckeredTexture);
                     m_MeshMultiPreviewMaterial.mainTextureScale = new Vector2(m_checkerTextureMultiplier, m_checkerTextureMultiplier);
                     break;
-                case DisplayMode.FlatUV:
+                case DisplayMode.UVLayout:
                     OnDropDownAction(m_MeshMultiPreviewMaterial, 0, true);
                     break;
                 case DisplayMode.VertexColor:
@@ -264,7 +264,7 @@ namespace UnityEditor
             previewUtility.camera.nearClipPlane = 0.0001f;
             previewUtility.camera.farClipPlane = 1000f;
 
-            if (displayMode == DisplayMode.FlatUV)
+            if (displayMode == DisplayMode.UVLayout)
             {
                 previewUtility.camera.orthographic = true;
                 previewUtility.camera.orthographicSize = m_ZoomFactor;
@@ -463,7 +463,7 @@ namespace UnityEditor
                     m_activeMaterial.mainTextureScale = new Vector2(m_checkerTextureMultiplier, m_checkerTextureMultiplier);
             }
             
-            if (displayMode == DisplayMode.FlatUV || displayMode == DisplayMode.UVChecker)
+            if (displayMode == DisplayMode.UVLayout || displayMode == DisplayMode.UVChecker)
             {
                 float channelDropDownWidth = EditorStyles.toolbarDropDown.CalcSize(new GUIContent("Channel 6")).x;
                 Rect channelDropdownRect = EditorGUILayout.GetControlRect(GUILayout.Width(channelDropDownWidth));
@@ -486,7 +486,7 @@ namespace UnityEditor
             if(EditorGUI.DropdownButton(displayModeDropdownRect, displayModeDropdownContent, FocusType.Passive, EditorStyles.toolbarDropDown))
                 DoPopup(displayModeDropdownRect, m_DisplayModes, (int)displayMode, SetDisplayMode, m_AvailableDisplayModes);
 
-            using (new EditorGUI.DisabledScope(displayMode == DisplayMode.FlatUV))
+            using (new EditorGUI.DisabledScope(displayMode == DisplayMode.UVLayout))
             {            
                 drawWire = GUILayout.Toggle(drawWire, Styles.wireframeToggle, EditorStyles.toolbarButton);
             }
@@ -518,14 +518,14 @@ namespace UnityEditor
             Type guiPreview = editorAssembly.GetType("PreviewGUI");
             MethodInfo drag2D = guiPreview.GetMethod("Drag2D");
 
-            if(displayMode != DisplayMode.FlatUV)
+            if(displayMode != DisplayMode.UVLayout)
                 previewDir = (Vector2)drag2D?.Invoke(null, new object[] {previewDir, r});
             //previewDir = PreviewGUI.Drag2D(previewDir, r);
             
-            if (Event.current.type == EventType.ScrollWheel && displayMode == DisplayMode.FlatUV)
+            if (Event.current.type == EventType.ScrollWheel && displayMode == DisplayMode.UVLayout)
                 MeshPreviewZoom(r, Event.current);
 
-            if (Event.current.type == EventType.MouseDrag && displayMode == DisplayMode.FlatUV)
+            if (Event.current.type == EventType.MouseDrag && displayMode == DisplayMode.UVLayout)
                 MeshPreviewPan(r, Event.current);
 
             if (Event.current.type != EventType.Repaint)
@@ -540,6 +540,11 @@ namespace UnityEditor
 
         void MeshPreviewZoom(Rect rect, Event evt)
         {
+            if (!rect.Contains(evt.mousePosition))
+            {
+                evt.Use();
+                return;
+            }
             float zoomDelta = (HandleUtility.niceMouseDeltaZoom * 0.5f) * 0.05f;
             var newZoom = m_ZoomFactor + m_ZoomFactor * zoomDelta;
             newZoom = Mathf.Clamp(newZoom, 0.1f, 10.0f);
@@ -560,6 +565,11 @@ namespace UnityEditor
         
         void MeshPreviewPan(Rect rect, Event evt)
         {
+            if (!rect.Contains(evt.mousePosition))
+            {
+                evt.Use();
+                return;
+            }
             var cam = m_PreviewUtility.camera;
             var screenPos = cam.WorldToScreenPoint(m_OrthoPosition);
             // event delta is in "screen" units of the preview rect, but the
