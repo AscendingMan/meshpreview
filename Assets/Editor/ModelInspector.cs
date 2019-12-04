@@ -39,7 +39,7 @@ namespace UnityEditor
         private static DisplayMode displayMode = DisplayMode.Shaded;
         
         private static float m_ZoomFactor = 1.0f;
-        private static Vector3 m_OrthoPosition = new Vector3(0,0,-1);
+        private static Vector3 m_OrthoPosition = new Vector3(0.5f,0.5f,-1);
         
         private static string[] m_DisplayModes =
         {
@@ -145,7 +145,7 @@ namespace UnityEditor
         void ResetView()
         {
             m_ZoomFactor = 1.0f;
-            m_OrthoPosition = new Vector3(0,0,-1);
+            m_OrthoPosition = new Vector3(0.5f,0.5f,-1);
             
             drawWire = true;
             activeUVChannel = 0;
@@ -270,18 +270,18 @@ namespace UnityEditor
                 previewUtility.camera.orthographicSize = m_ZoomFactor;
                 renderCamTransform.position = m_OrthoPosition;
                 renderCamTransform.rotation = Quaternion.identity;
+                DrawUVLayout(mesh, previewUtility);
+                return;
             }
-            else
-            {
-                float halfSize = bounds.extents.magnitude;
-                float distance = 4.0f * halfSize;
-                
-                previewUtility.camera.orthographic = false;
-                Quaternion camRotation = Quaternion.Euler(-previewDir.y, -previewDir.x, 0);
-                Vector3 camPosition = camRotation * (Vector3.forward * -distance);
-                renderCamTransform.position = camPosition;
-                renderCamTransform.rotation = camRotation;
-            }
+
+            float halfSize = bounds.extents.magnitude;
+            float distance = 4.0f * halfSize;
+            
+            previewUtility.camera.orthographic = false;
+            Quaternion camRotation = Quaternion.Euler(-previewDir.y, -previewDir.x, 0);
+            Vector3 camPosition = camRotation * (Vector3.forward * -distance);
+            renderCamTransform.position = camPosition;
+            renderCamTransform.rotation = camRotation;
 
             previewUtility.lights[0].intensity = 1.4f;
             previewUtility.lights[0].transform.rotation = Quaternion.Euler(40f, 40f, 0);
@@ -290,6 +290,52 @@ namespace UnityEditor
             previewUtility.ambientColor = new Color(.1f, .1f, .1f, 0);
             
             RenderMeshPreviewSkipCameraAndLighting(mesh, bounds, previewUtility, litMaterial, wireMaterial, null, direction, meshSubset);
+        }
+
+        static void DrawUVLayout(Mesh mesh, PreviewRenderUtility previewUtility)
+        {
+            GL.PushMatrix();
+
+            // draw UV grid
+            m_LineMaterial.SetPass(0);
+
+            GL.LoadProjectionMatrix(previewUtility.camera.projectionMatrix);
+            GL.MultMatrix(previewUtility.camera.worldToCameraMatrix);
+            
+            GL.Begin(GL.LINES);
+            const float step = 0.125f;
+            for (var g = -2.0f; g <= 3.0f; g += step)
+            {
+                var majorLine = Mathf.Abs(g - Mathf.Round(g)) < 0.01f;
+                if (majorLine)
+                {
+                    // major grid lines: larger area than [0..1] range, more opaque
+                    GL.Color(new Color(0.6f, 0.6f, 0.7f, 1.0f));
+                    GL.Vertex3(-2, g, 0);
+                    GL.Vertex3(+3, g, 0);
+                    GL.Vertex3(g, -2, 0);
+                    GL.Vertex3(g, +3, 0);
+                }
+                else if (g >= 0 && g <= 1)
+                {
+                    // minor grid lines: only within [0..1] area, more transparent
+                    GL.Color(new Color(0.6f, 0.6f, 0.7f, 0.5f));
+                    GL.Vertex3(0, g, 0);
+                    GL.Vertex3(1, g, 0);
+                    GL.Vertex3(g, 0, 0);
+                    GL.Vertex3(g, 1, 0);
+                }
+            }
+            GL.End();
+            
+            // draw the mesh
+            GL.LoadIdentity();
+            m_MeshMultiPreviewMaterial.SetPass(0);
+            GL.wireframe = true;
+            Graphics.DrawMeshNow(mesh, previewUtility.camera.worldToCameraMatrix);
+            GL.wireframe = false;
+            
+            GL.PopMatrix();
         }
 
         internal static void RenderMeshPreviewSkipCameraAndLighting(
@@ -312,7 +358,7 @@ namespace UnityEditor
             Unsupported.SetRenderSettingsUseFogNoDirty(false);
 
             int submeshes = mesh.subMeshCount;
-            if (litMaterial != null && displayMode != DisplayMode.FlatUV)
+            if (litMaterial != null)
             {
                 previewUtility.camera.clearFlags = CameraClearFlags.Nothing;
                 if (meshSubset < 0 || meshSubset >= submeshes)
@@ -325,52 +371,7 @@ namespace UnityEditor
                 previewUtility.Render();
             }
 
-            // draw UV grid
-            if (displayMode == DisplayMode.FlatUV)
-            {
-                wireMaterial = m_MeshMultiPreviewMaterial;
-
-                m_LineMaterial.SetPass(0);
-
-                float increment = 0.1f;
-
-                GL.PushMatrix();
-                
-                GL.LoadProjectionMatrix(previewUtility.camera.projectionMatrix);
-                GL.LoadIdentity();
-                GL.MultMatrix(previewUtility.camera.worldToCameraMatrix);
-                
-                GL.Begin(GL.LINES);
-                GL.Color(new Color(1,1,1,0.25f));
-
-                float offsetX = -mesh.bounds.center.x;
-                float offsetY = -mesh.bounds.center.y;
-
-                for (int x = -15; x < 16; x++)
-                {
-                    GL.Vertex(new Vector3(-1.5f+offsetX,x*increment+offsetY,0));
-                    GL.Vertex(new Vector3(1.5f+offsetX,x*increment+offsetY,0));
-                    
-                    GL.Vertex(new Vector3(x*increment+offsetX,-1.5f+offsetY,0));
-                    GL.Vertex(new Vector3(x*increment+offsetX,1.5f+offsetY,0));
-                }
-
-                // 0...1 lines
-                for (int x = -15; x < 16; x+=10)
-                {
-                    GL.Color(Color.blue);
-                    GL.Vertex(new Vector3(-1.5f+offsetX,x*increment+offsetY,0));
-                    GL.Vertex(new Vector3(1.5f+offsetX,x*increment+offsetY,0));
-                    
-                    GL.Vertex(new Vector3(x*increment+offsetX,1.5f+offsetY,0));
-                    GL.Vertex(new Vector3(x*increment+offsetX,-1.5f+offsetY,0));
-                }
-
-                GL.End();
-                GL.PopMatrix();
-            }
-            
-            if (wireMaterial != null && (drawWire || displayMode == DisplayMode.FlatUV))
+            if (wireMaterial != null && drawWire)
             {
                 previewUtility.camera.clearFlags = CameraClearFlags.Nothing;
                 GL.wireframe = true;
