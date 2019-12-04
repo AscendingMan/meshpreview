@@ -403,7 +403,14 @@ namespace UnityEditor
                 if (meshSubset < 0 || meshSubset >= submeshes)
                 {
                     for (int i = 0; i < submeshes; ++i)
+                    {
+                        // lines/points already are wire-like; it does not make sense to overdraw
+                        // them again with dark wireframe color
+                        var topology = mesh.GetTopology(i);
+                        if (topology == MeshTopology.Lines || topology == MeshTopology.LineStrip || topology == MeshTopology.Points)
+                            continue;
                         previewUtility.DrawMesh(mesh, pos, rot, wireMaterial, i, customProperties);
+                    }
                 }
                 else
                     previewUtility.DrawMesh(mesh, pos, rot, wireMaterial, meshSubset, customProperties);
