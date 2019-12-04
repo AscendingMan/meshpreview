@@ -31,7 +31,6 @@ Shader "Unlit/Mesh-MultiPreview"
             float _WireThickness;
             int _UVChannel;
             int _Mode;
-            fixed4 _Color;
 
             struct appdata
             {
@@ -88,7 +87,7 @@ Shader "Unlit/Mesh-MultiPreview"
                                     
                 if(_Mode == 1)
                 {
-                    o.color = _Color;
+                    o.color = v.color;
                 }
                 
                 if(_Mode == 2)
