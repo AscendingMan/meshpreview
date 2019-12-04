@@ -338,6 +338,16 @@ namespace UnityEditor
             GL.PopMatrix();
         }
 
+        static Color GetSubMeshTint(int index)
+        {
+            // color palette generator based on "golden ratio" idea, like in
+            // https://martin.ankerl.com/2009/12/09/how-to-create-random-colors-programmatically/
+            var hue = Mathf.Repeat(index * 0.618f, 1);
+            var sat = index == 0 ? 0f : 0.3f;
+            var val = 1f;
+            return Color.HSVToRGB(hue, sat, val);
+        }
+
         internal static void RenderMeshPreviewSkipCameraAndLighting(
             Mesh mesh,
             Bounds bounds,
@@ -358,13 +368,26 @@ namespace UnityEditor
             Unsupported.SetRenderSettingsUseFogNoDirty(false);
 
             int submeshes = mesh.subMeshCount;
+            var tintSubmeshes = false;
+            var colorPropID = 0;
+            if (submeshes > 1 && displayMode == DisplayMode.Shaded && customProperties == null & meshSubset == -1)
+            {
+                tintSubmeshes = true;
+                customProperties = new MaterialPropertyBlock();
+                colorPropID = Shader.PropertyToID("_Color");
+            }
+
             if (litMaterial != null)
             {
                 previewUtility.camera.clearFlags = CameraClearFlags.Nothing;
                 if (meshSubset < 0 || meshSubset >= submeshes)
                 {
                     for (int i = 0; i < submeshes; ++i)
+                    {
+                        if (tintSubmeshes)
+                            customProperties.SetColor(colorPropID, GetSubMeshTint(i));
                         previewUtility.DrawMesh(mesh, pos, rot, litMaterial, i, customProperties);
+                    }
                 }
                 else
                     previewUtility.DrawMesh(mesh, pos, rot, litMaterial, meshSubset, customProperties);
@@ -375,6 +398,8 @@ namespace UnityEditor
             {
                 previewUtility.camera.clearFlags = CameraClearFlags.Nothing;
                 GL.wireframe = true;
+                if (tintSubmeshes)
+                    customProperties.SetColor(colorPropID, Color.white);
                 if (meshSubset < 0 || meshSubset >= submeshes)
                 {
                     for (int i = 0; i < submeshes; ++i)
@@ -705,9 +730,13 @@ namespace UnityEditor
             {
                 var subMesh = mesh.GetSubMesh(i);
                 string baseVertex = (subMesh.baseVertex == 0) ? "" : ", base vertex " + subMesh.baseVertex;
+                if (mesh.subMeshCount > 1)
+                    GUI.color = GetSubMeshTint(i);
                 GUILayout.Label(String.Format("Triangles: {0} indices ({1} triangles) starting from {2}", subMesh.indexCount, subMesh.indexCount/3, subMesh.firstVertex) + baseVertex);
                 GUILayout.Label(String.Format("Bounds: center {0}, size {1}", subMesh.bounds.center.ToString("g3"), subMesh.bounds.size.ToString("g3")));
             }
+
+            GUI.color = Color.white;
             GUILayout.EndVertical();
             GUILayout.EndHorizontal();
             
