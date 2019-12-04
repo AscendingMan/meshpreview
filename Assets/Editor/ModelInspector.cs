@@ -576,8 +576,8 @@ namespace UnityEditor
             {
                 var format = mesh.GetVertexAttributeFormat(attr);
                 var dimension = mesh.GetVertexAttributeDimension(attr);
-
-                GUILayout.Label(String.Format("{0}: {1} x {2} ({3} bytes)", txt, format, dimension, ConvertFormatToSize(format) * dimension));
+                
+                return String.Format("{0}: {1} x {2} ({3} bytes)", txt, format, dimension, ConvertFormatToSize(format) * dimension);
             }
 
             return "";
@@ -599,22 +599,46 @@ namespace UnityEditor
 
             return totalCount;
         }
+        
+        long CalcTotalVertices(Mesh mesh)
+        {
+            long totalCount = 0;
+            for (int i = 0; i < mesh.subMeshCount; i++)
+            {
+                totalCount += mesh.GetSubMesh(i).vertexCount;
+            }
+
+            return totalCount;
+        }
+        
+        int GetSizePerAttribute(Mesh mesh, VertexAttribute attr)
+        {
+            int size = 0;
+
+            var elementSize = ConvertFormatToSize(mesh.GetVertexAttributeFormat(attr));
+            var dimension = mesh.GetVertexAttributeDimension(attr);
+
+            if (mesh.HasVertexAttribute(attr))
+                size += elementSize * dimension;
+            
+            return size;
+        }
 
         // overriding the base Editor to avoid drawing unnecessary serialized data -- for now
         public override void OnInspectorGUI()
         {
             GUI.enabled = true;
+            long totalVertices = 0;
 
             if (targets.Length > 1)
             {
-                long totalVertices = 0; 
                 long totalIndices = 0;
                 
                 for (int i = 0; i < targets.Length; i++)
                 {
                     var tempMesh = targets[i] as Mesh;
-                    totalVertices += CalcTotalIndices(tempMesh);
-                    totalIndices += tempMesh.GetIndexCount(0);
+                    totalVertices += CalcTotalVertices(tempMesh);
+                    totalIndices += CalcTotalIndices(tempMesh);
                 }
                 GUILayout.Label(String.Format("{0} meshes selected, {1} total vertices, {2} total indices", targets.Length, totalVertices, totalIndices));
                 return;
@@ -622,27 +646,35 @@ namespace UnityEditor
                 
             Mesh mesh = target as Mesh;
 
-            GUILayout.Label(String.Format("Vertices: {0} vertices ({1})", mesh.vertexCount, EditorUtility.FormatBytes(mesh.vertexCount * (8*sizeof(float)))), EditorStyles.boldLabel);
+            int size = 0;
+            for (int i = 0; i < 12; i++)
+                size += GetSizePerAttribute(mesh, (VertexAttribute)i);
 
-            GUILayout.Space(10);
+            totalVertices = CalcTotalVertices(mesh);
+            GUILayout.Label(String.Format("Vertices: {0} vertices ({1})", totalVertices, EditorUtility.FormatBytes(totalVertices * size)), EditorStyles.boldLabel);
 
             GUILayout.BeginHorizontal();
             GUILayout.Space(10);
             GUILayout.BeginVertical();
-            GUILayout.Label("Format", EditorStyles.boldLabel);
+            GUILayout.Space(5);
+            GUILayout.Label(String.Format("Bounds: center {0}, size {1}", mesh.bounds.center.ToString("g3"), mesh.bounds.size.ToString("g3")));
             GUILayout.EndVertical();
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            GUILayout.Space(20);
+            GUILayout.Space(10);
             GUILayout.BeginVertical();
-            GUILayout.Space(5);
+
 
             var txt = GetAttributeString(mesh, VertexAttribute.Position, "Position");
             if(!String.IsNullOrEmpty(txt))
                 GUILayout.Label(txt);
             
             txt = GetAttributeString(mesh, VertexAttribute.Normal, "Normal");
+            if(!String.IsNullOrEmpty(txt))
+                GUILayout.Label(txt);
+            
+            txt = GetAttributeString(mesh, VertexAttribute.Tangent, "Tangent");
             if(!String.IsNullOrEmpty(txt))
                 GUILayout.Label(txt);
             
@@ -666,27 +698,10 @@ namespace UnityEditor
             GUILayout.EndVertical();
             GUILayout.EndHorizontal();
             
-            GUILayout.BeginHorizontal();
-            GUILayout.Space(10);
-            GUILayout.BeginVertical();
-            GUILayout.Label("Bounds", EditorStyles.boldLabel);
-            GUILayout.EndVertical();
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Space(20);
-            GUILayout.BeginVertical();
-            GUILayout.Space(5);
-            GUILayout.Label(String.Format("Center {0}", mesh.bounds.center.ToString("g3")));
-            GUILayout.Label(String.Format("Size {0}", mesh.bounds.size.ToString("g3")));
-            GUILayout.Space(5);
-            GUILayout.EndVertical();
-            GUILayout.EndHorizontal();
-
             var totalIndexCount = CalcTotalIndices(mesh);
             var formatMultiplier = (mesh.indexFormat == IndexFormat.UInt16) ? 2 : 4; //bytes
 
-            GUILayout.Label(String.Format("Indices: {0} indices ({1})", totalIndexCount, EditorUtility.FormatBytes(totalIndexCount * formatMultiplier)), EditorStyles.boldLabel);
+            GUILayout.Label(String.Format("Indices: {0} indices, {1} ({2})", totalIndexCount, mesh.indexFormat, EditorUtility.FormatBytes(totalIndexCount * formatMultiplier)), EditorStyles.boldLabel);
 
             string subMeshText = mesh.subMeshCount == 1 ? "submesh" : "submeshes";
             GUILayout.BeginHorizontal();
@@ -704,8 +719,10 @@ namespace UnityEditor
             for (int i = 0; i < mesh.subMeshCount; i++)
             {
                 var subMesh = mesh.GetSubMesh(i);
+                string polygonType = subMesh.topology == MeshTopology.Quads ? "Quads" : "Triangles"; 
                 string baseVertex = (subMesh.baseVertex == 0) ? "" : ", base vertex " + subMesh.baseVertex;
-                GUILayout.Label(String.Format("Triangles: {0} indices ({1} triangles) starting from {2}", subMesh.indexCount, subMesh.indexCount/3, subMesh.firstVertex) + baseVertex);
+                int divisor = subMesh.topology == MeshTopology.Quads ? 4 : 3; 
+                GUILayout.Label(String.Format("{0}: {1} indices ({2} {3}) starting from {4}", polygonType, subMesh.indexCount, subMesh.indexCount/divisor, polygonType.ToLower(), subMesh.firstVertex) + baseVertex);
                 GUILayout.Label(String.Format("Bounds: center {0}, size {1}", subMesh.bounds.center.ToString("g3"), subMesh.bounds.size.ToString("g3")));
             }
             GUILayout.EndVertical();
@@ -720,7 +737,7 @@ namespace UnityEditor
                 GUILayout.Space(10);
                 GUILayout.BeginVertical();
                 GUILayout.Space(5);
-                GUILayout.Label(String.Format("Skin Weight count {0}", mesh.boneWeights.Length));
+                GUILayout.Label(String.Format("Skin Weight Count: {0}", mesh.boneWeights.Length));
                 GUILayout.EndVertical();
                 GUILayout.EndHorizontal();   
             }
@@ -734,7 +751,7 @@ namespace UnityEditor
                 GUILayout.Space(10);
                 GUILayout.BeginVertical();
                 GUILayout.Space(5);
-                GUILayout.Label(String.Format("Blend Shape count {0}", mesh.blendShapeCount));
+                GUILayout.Label(String.Format("Blend Shape Count {0}", mesh.blendShapeCount));
                 GUILayout.EndVertical();
                 GUILayout.EndHorizontal();   
             }
