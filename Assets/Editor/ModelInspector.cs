@@ -1,12 +1,7 @@
 using UnityEngine;
-using UnityEditor;
-using UnityEditorInternal;
 using System.Reflection;
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using UnityEngine.Rendering;
 
 namespace UnityEditor
@@ -44,7 +39,7 @@ namespace UnityEditor
         private static DisplayMode displayMode = DisplayMode.Shaded;
         
         private static float m_ZoomFactor = 1.0f;
-        private static Vector3 m_PivotPositionOffset = Vector3.zero;
+        private static Vector3 m_OrthoPosition = new Vector3(0,0,-1);
         
         private static string[] m_DisplayModes =
         {
@@ -149,11 +144,8 @@ namespace UnityEditor
         
         void ResetView()
         {
-            if(displayMode == DisplayMode.FlatUV)
-                previewDir = new Vector2(0, 0);
-            
             m_ZoomFactor = 1.0f;
-            m_PivotPositionOffset = Vector3.zero;
+            m_OrthoPosition = new Vector3(0,0,-1);
             
             drawWire = true;
             activeUVChannel = 0;
@@ -268,28 +260,27 @@ namespace UnityEditor
 
             Bounds bounds = mesh.bounds;
             
-            float distMultiplier = displayMode == DisplayMode.FlatUV ? 5.0f : 4.0f;
-            float halfSize = displayMode == DisplayMode.FlatUV ? 0.5f : bounds.extents.magnitude;
-            float distance = distMultiplier * halfSize;
-
             Transform renderCamTransform = previewUtility.camera.GetComponent<Transform>();
             previewUtility.camera.nearClipPlane = 0.0001f;
             previewUtility.camera.farClipPlane = 1000f;
-            
-            Quaternion camRotation = displayMode == DisplayMode.FlatUV ? Quaternion.identity : Quaternion.Euler(-previewDir.y, -previewDir.x, 0);
-            Vector3 camPosition = camRotation * (Vector3.forward * -distance * m_ZoomFactor);
-            renderCamTransform.position = camPosition;
-            renderCamTransform.rotation = camRotation;
 
             if (displayMode == DisplayMode.FlatUV)
             {
-                Vector3 offsetPos = new Vector3(0, mesh.bounds.center.y/2,1);
-                camPosition = Quaternion.identity * (offsetPos * -distance * m_ZoomFactor) + m_PivotPositionOffset;
- 
-                if (camPosition.z > 2)
-                    camPosition.z = 1;
-
+                previewUtility.camera.orthographic = true;
+                previewUtility.camera.orthographicSize = m_ZoomFactor;
+                renderCamTransform.position = m_OrthoPosition;
+                renderCamTransform.rotation = Quaternion.identity;
+            }
+            else
+            {
+                float halfSize = bounds.extents.magnitude;
+                float distance = 4.0f * halfSize;
+                
+                previewUtility.camera.orthographic = false;
+                Quaternion camRotation = Quaternion.Euler(-previewDir.y, -previewDir.x, 0);
+                Vector3 camPosition = camRotation * (Vector3.forward * -distance);
                 renderCamTransform.position = camPosition;
+                renderCamTransform.rotation = camRotation;
             }
 
             previewUtility.lights[0].intensity = 1.4f;
@@ -499,10 +490,10 @@ namespace UnityEditor
             //previewDir = PreviewGUI.Drag2D(previewDir, r);
             
             if (Event.current.type == EventType.ScrollWheel && displayMode == DisplayMode.FlatUV)
-                MeshPreviewZoom(Event.current);
+                MeshPreviewZoom(r, Event.current);
 
             if (Event.current.type == EventType.MouseDrag && displayMode == DisplayMode.FlatUV)
-                MeshPreviewPan(Event.current);
+                MeshPreviewPan(r, Event.current);
 
             if (Event.current.type != EventType.Repaint)
                 return;
@@ -514,23 +505,41 @@ namespace UnityEditor
             m_PreviewUtility.EndAndDrawPreview(r);
         }
 
-        void MeshPreviewZoom(Event evt)
+        void MeshPreviewZoom(Rect rect, Event evt)
         {
-            float zoomDelta =  (HandleUtility.niceMouseDeltaZoom * 0.5f) * 0.05f;
-            m_ZoomFactor += m_ZoomFactor * zoomDelta;
-                
-            m_ZoomFactor = Mathf.Max(m_ZoomFactor, 1.0f / 10.0f);
+            float zoomDelta = (HandleUtility.niceMouseDeltaZoom * 0.5f) * 0.05f;
+            var newZoom = m_ZoomFactor + m_ZoomFactor * zoomDelta;
+            newZoom = Mathf.Clamp(newZoom, 0.1f, 10.0f);
+
+            // we want to zoom around current mouse position
+            var mouseViewPos = new Vector2(
+                evt.mousePosition.x / rect.width,
+                1 - evt.mousePosition.y / rect.height);
+            var mouseWorldPos = m_PreviewUtility.camera.ViewportToWorldPoint(mouseViewPos);
+            var mouseToCamPos = m_OrthoPosition - mouseWorldPos;
+            var newCamPos = mouseWorldPos + mouseToCamPos * (newZoom / m_ZoomFactor);
+            m_OrthoPosition.x = newCamPos.x;
+            m_OrthoPosition.y = newCamPos.y;
+
+            m_ZoomFactor = newZoom;
             evt.Use(); 
         }
         
-        void MeshPreviewPan(Event evt)
+        void MeshPreviewPan(Rect rect, Event evt)
         {
-            Camera cam = m_PreviewUtility.camera;
-            Vector3 screenPos = cam.WorldToScreenPoint(Vector3.zero + m_PivotPositionOffset);
-            Vector3 delta = new Vector3(-evt.delta.x*2, evt.delta.y, 0);
-            screenPos += delta * Mathf.Lerp(0.25f, 2.0f, m_ZoomFactor * 0.5f);
-            Vector3 worldDelta = cam.ScreenToWorldPoint(screenPos) - m_PivotPositionOffset;
-            m_PivotPositionOffset += worldDelta;
+            var cam = m_PreviewUtility.camera;
+            var screenPos = cam.WorldToScreenPoint(m_OrthoPosition);
+            // event delta is in "screen" units of the preview rect, but the
+            // preview camera is rendering into a render target that could
+            // be different size; have to adjust drag position to match
+            var delta = new Vector3(
+                -evt.delta.x * cam.pixelWidth / rect.width,
+                evt.delta.y * cam.pixelHeight / rect.height,
+                0);
+            screenPos += delta;
+            var worldPos = cam.ScreenToWorldPoint(screenPos);
+            m_OrthoPosition.x = worldPos.x;
+            m_OrthoPosition.y = worldPos.y;
             evt.Use();
         }
 
