@@ -69,8 +69,7 @@ namespace UnityEditor
         
         internal static Material CreateWireframeMaterial()
         {
-            //var shader = Shader.FindBuiltin("Internal-Colored.shader");
-            var shader = Shader.Find("Standard");
+            var shader = Shader.Find("Hidden/Internal-Colored");
             if (!shader)
             {
                 Debug.LogWarning("Could not find the builtin Colored shader");
@@ -83,9 +82,10 @@ namespace UnityEditor
             mat.SetFloat("_ZBias", -1.0f);
             return mat;
         }
-        internal static Material CreateMeshMultiPreviewMaterial()
+
+        static Material CreateMeshMultiPreviewMaterial()
         {
-            var shader = Shader.Find("Unlit/Mesh-MultiPreview");
+            var shader = EditorGUIUtility.LoadRequired("Previews/MeshPreviewShader.shader") as Shader;
             if (!shader)
             {
                 Debug.LogWarning("Could not find the built in Mesh preview shader");
@@ -96,7 +96,7 @@ namespace UnityEditor
             return mat;
         }
         
-        internal static Material CreateLineMaterial()
+        static Material CreateLineMaterial()
         {
             Shader shader = Shader.Find("Hidden/Internal-Colored");
             if (!shader)
@@ -106,9 +106,9 @@ namespace UnityEditor
             }
             var mat = new Material(shader);
             mat.hideFlags = HideFlags.HideAndDontSave;
-            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            mat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+            mat.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
+            mat.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
+            mat.SetInt("_Cull", (int)CullMode.Off);
             mat.SetInt("_ZWrite", 0);
             return mat;
         }
@@ -775,12 +775,10 @@ namespace UnityEditor
                 m_PreviewUtility.Cleanup();
                 m_PreviewUtility = null;
             }
-            if (m_WireMaterial)
-            {
-                DestroyImmediate(m_WireMaterial, true);
-                //DestroyImmediate(m_MeshMultiPreviewMaterial, true);
-                DestroyImmediate(m_activeMaterial, true);
-            }
+            DestroyImmediate(m_ShadedPreviewMaterial);
+            DestroyImmediate(m_WireMaterial);
+            DestroyImmediate(m_MeshMultiPreviewMaterial);
+            DestroyImmediate(m_LineMaterial);
         }
         
         public override string GetInfoString()
