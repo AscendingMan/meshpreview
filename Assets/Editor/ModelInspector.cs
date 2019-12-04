@@ -399,7 +399,7 @@ namespace UnityEditor
                 previewUtility.camera.clearFlags = CameraClearFlags.Nothing;
                 GL.wireframe = true;
                 if (tintSubmeshes)
-                    customProperties.SetColor(colorPropID, Color.white);
+                    customProperties.SetColor(colorPropID, wireMaterial.color);
                 if (meshSubset < 0 || meshSubset >= submeshes)
                 {
                     for (int i = 0; i < submeshes; ++i)
