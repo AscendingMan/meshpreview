@@ -403,7 +403,14 @@ namespace UnityEditor
                 if (meshSubset < 0 || meshSubset >= submeshes)
                 {
                     for (int i = 0; i < submeshes; ++i)
+                    {
+                        // lines/points already are wire-like; it does not make sense to overdraw
+                        // them again with dark wireframe color
+                        var topology = mesh.GetTopology(i);
+                        if (topology == MeshTopology.Lines || topology == MeshTopology.LineStrip || topology == MeshTopology.Points)
+                            continue;
                         previewUtility.DrawMesh(mesh, pos, rot, wireMaterial, i, customProperties);
+                    }
                 }
                 else
                     previewUtility.DrawMesh(mesh, pos, rot, wireMaterial, meshSubset, customProperties);
@@ -703,15 +710,24 @@ namespace UnityEditor
             for (int i = 0; i < mesh.subMeshCount; i++)
             {
                 var subMesh = mesh.GetSubMesh(i);
-                string polygonType = subMesh.topology == MeshTopology.Quads ? "Quads" : "Triangles"; 
+                string polygonType = subMesh.topology.ToString(); 
                 string baseVertex = (subMesh.baseVertex == 0) ? "" : ", base vertex " + subMesh.baseVertex;
                 
                 if (mesh.subMeshCount > 1)
                     GUI.color = GetSubMeshTint(i);
 
-                int divisor = subMesh.topology == MeshTopology.Quads ? 4 : 3; 
-                GUILayout.Label(String.Format("{0}: {1} indices ({2} {3}) starting from {4}", polygonType, subMesh.indexCount, subMesh.indexCount/divisor, polygonType.ToLower(), subMesh.indexStart) + baseVertex);
-                GUILayout.Label(String.Format("Bounds: center {0}, size {1}", subMesh.bounds.center.ToString("g3"), subMesh.bounds.size.ToString("g3")));
+                var divisor = 3;
+                switch (subMesh.topology)
+                {
+                    case MeshTopology.Points: divisor = 1; break;
+                    case MeshTopology.Lines: divisor = 2; break;
+                    case MeshTopology.Triangles: divisor = 3; break;
+                    case MeshTopology.Quads: divisor = 4; break;
+                    case MeshTopology.LineStrip: divisor = 2; break; // technically not correct, but eh
+                }
+                var primCount = subMesh.indexCount / divisor;
+                GUILayout.Label($"#{i}: {primCount} {polygonType.ToLowerInvariant()} ({subMesh.indexCount} indices starting from {subMesh.indexStart}){baseVertex}");
+                GUILayout.Label($"Bounds: center {subMesh.bounds.center.ToString("g3")}, size {subMesh.bounds.size.ToString("g3")}");
             }
 
             GUI.color = Color.white;
