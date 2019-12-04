@@ -74,12 +74,10 @@ Shader "Unlit/Mesh-MultiPreview"
                 if(_Mode == 0)
                 {
                     o.uv = GetUV(v);
-                    o.vertex = UnityObjectToClipPos(float4(o.uv.x-0.5, o.uv.y-0.5, 0, 1));
+                    o.vertex = UnityObjectToClipPos(float4(o.uv.x, o.uv.y, 0, 1));
+                    o.color = fixed4(1.0, 0.9, 0.6, 1.0);
                 }
                 
-                if (_Mode == 0)
-                    o.color = 1;
-             
                 if(_Mode > 0)
                 {
                     o.vertex = UnityObjectToClipPos(v.vertex);
