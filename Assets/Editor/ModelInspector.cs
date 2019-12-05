@@ -610,11 +610,11 @@ namespace UnityEditor
             }
         }
 
-        static string GetAttributeString(VertexAttributeDescriptor attr, string txt)
+        static string GetAttributeString(VertexAttributeDescriptor attr)
         {
             var format = attr.format;
             var dimension = attr.dimension;
-            return $"{txt}: {format} x {dimension} ({ConvertFormatToSize(format) * dimension} bytes)";
+            return $"{format} x {dimension} ({ConvertFormatToSize(format) * dimension} bytes)";
         }
 
         static int CalcTotalIndices(Mesh mesh)
@@ -642,15 +642,15 @@ namespace UnityEditor
             // Multi-selection, just display total # of verts/indices and bail out
             if (targets.Length > 1)
             {
-                int totalVertices = 0;
-                int totalIndices = 0;
+                var totalVertices = 0;
+                var totalIndices = 0;
                 
                 foreach (Mesh m in targets)
                 {
                     totalVertices += m.vertexCount;
                     totalIndices += CalcTotalIndices(m);
                 }
-                GUILayout.Label($"{targets.Length} meshes selected, {totalVertices} total vertices, {totalIndices} total indices");
+                EditorGUILayout.LabelField($"{targets.Length} meshes selected, {totalVertices} total vertices, {totalIndices} total indices");
                 return;
             }
             
@@ -659,63 +659,81 @@ namespace UnityEditor
                 return;
             var attributes = mesh.GetVertexAttributes();
             
-            var vertexSize = attributes.Sum(attr => ConvertFormatToSize(attr.format) * attr.dimension);
-            var vertexBufferSizeStr = EditorUtility.FormatBytes(mesh.vertexCount * vertexSize);
+            ShowVertexInfo(mesh, attributes);
+            ShowIndexInfo(mesh);
+            ShowSkinInfo(mesh, attributes);
+            ShowBlendShapeInfo(mesh);
+            ShowOtherInfo(mesh);
 
-            GUILayout.Label($"Vertices: {mesh.vertexCount} ({vertexBufferSizeStr})", EditorStyles.boldLabel);
+            GUI.enabled = false;
+        }
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Space(10);
-            GUILayout.BeginVertical();
-            GUILayout.Space(5);
-            GUILayout.Label($"Bounds: center {mesh.bounds.center.ToString("g3")}, size {mesh.bounds.size.ToString("g3")}");
-            GUILayout.EndVertical();
-            GUILayout.EndHorizontal();
+        static void ShowOtherInfo(Mesh mesh)
+        {
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Other", EditorStyles.boldLabel);
+            EditorGUI.indentLevel++;
+            EditorGUILayout.LabelField("Bounds Center", mesh.bounds.center.ToString("g4"));
+            EditorGUILayout.LabelField("Bounds Size", mesh.bounds.size.ToString("g4"));
+            EditorGUILayout.LabelField("Read/Write Enabled", mesh.isReadable.ToString());
+            EditorGUI.indentLevel--;
+        }
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Space(10);
-            GUILayout.BeginVertical();
-            
-            for (int i = 0; i < attributes.Length; i++)
+        static void ShowBlendShapeInfo(Mesh mesh)
+        {
+            var blendShapeCount = mesh.blendShapeCount;
+            if (blendShapeCount <= 0)
+                return;
+                
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField($"Blend Shapes: {blendShapeCount}", EditorStyles.boldLabel);
+
+            EditorGUI.indentLevel++;
+            for (int i = 0; i < blendShapeCount; ++i)
             {
-                string title = attributes[i].attribute.ToString();
-                if (title.Contains("TexCoord"))
-                    title = title.Replace("TexCoord", "UV");
-                string txt = GetAttributeString(attributes[i], title);
-                if(!String.IsNullOrEmpty(txt))
-                    GUILayout.Label(txt);
+                EditorGUILayout.LabelField($"#{i}: {mesh.GetBlendShapeName(i)} ({mesh.GetBlendShapeFrameCount(i)} frames)");
             }
-            
-            GUILayout.Space(5);
-            GUILayout.EndVertical();
-            GUILayout.EndHorizontal();
-            
+            EditorGUI.indentLevel--;
+        }
+
+        static void ShowSkinInfo(Mesh mesh, VertexAttributeDescriptor[] attributes)
+        {
+            var boneCount = mesh.bindposes.Length;
+            if (boneCount <= 0)
+                return;
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField($"Skin: {boneCount} bones", EditorStyles.boldLabel);
+            EditorGUI.indentLevel++;
+            foreach (var a in attributes)
+            {
+                // only list skin related attributes
+                if (a.attribute == VertexAttribute.BlendIndices || a.attribute == VertexAttribute.BlendWeight)
+                    EditorGUILayout.LabelField(a.attribute.ToString(), GetAttributeString(a));
+            }
+            EditorGUI.indentLevel--;
+        }
+
+        static void ShowIndexInfo(Mesh mesh)
+        {
             var indexCount = CalcTotalIndices(mesh);
             var indexSize = mesh.indexFormat == IndexFormat.UInt16 ? 2 : 4;
-            var indexBufferSizeStr = EditorUtility.FormatBytes(indexCount * indexSize);
+            var bufferSizeStr = EditorUtility.FormatBytes(indexCount * indexSize);
 
-            GUILayout.Label($"Indices: {indexCount}, {mesh.indexFormat} format ({indexBufferSizeStr})", EditorStyles.boldLabel);
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField($"Indices: {indexCount}, {mesh.indexFormat} format ({bufferSizeStr})", EditorStyles.boldLabel);
+            EditorGUI.indentLevel++;
 
             var subMeshCount = mesh.subMeshCount;
             string subMeshText = subMeshCount == 1 ? "submesh" : "submeshes";
-            GUILayout.BeginHorizontal();
-            GUILayout.Space(10);
-            GUILayout.BeginVertical();
-            GUILayout.Space(5);
-            GUILayout.Label(String.Format("{0} {1}:", mesh.subMeshCount, subMeshText));
-            GUILayout.EndVertical();
-            GUILayout.EndHorizontal();
+            EditorGUILayout.LabelField($"{mesh.subMeshCount} {subMeshText}:");
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Space(20);
-            GUILayout.BeginVertical();
-            
             for (int i = 0; i < mesh.subMeshCount; i++)
             {
                 var subMesh = mesh.GetSubMesh(i);
                 string topology = subMesh.topology.ToString().ToLowerInvariant();
                 string baseVertex = subMesh.baseVertex == 0 ? "" : ", base vertex " + subMesh.baseVertex;
-                
+
                 var divisor = 3;
                 switch (subMesh.topology)
                 {
@@ -725,57 +743,44 @@ namespace UnityEditor
                     case MeshTopology.Quads: divisor = 4; break;
                     case MeshTopology.LineStrip: divisor = 2; break; // technically not correct, but eh
                 }
+
                 var primCount = subMesh.indexCount / divisor;
                 if (subMeshCount > 1)
                 {
                     GUILayout.BeginHorizontal();
                     var rect = GUILayoutUtility.GetRect(GUIContent.none, GUI.skin.label, GUILayout.Width(7));
+                    rect.x += EditorGUI.indentLevel * 15; //@TODO: use EditorGUI.indent;
                     var tint = GetSubMeshTint(i);
                     DrawColorRect(rect, tint);
                 }
-                GUILayout.Label($"#{i}: {primCount} {topology} ({subMesh.indexCount} indices starting from {subMesh.indexStart}){baseVertex}");
+
+                EditorGUILayout.LabelField($"#{i}: {primCount} {topology} ({subMesh.indexCount} indices starting from {subMesh.indexStart}){baseVertex}");
                 if (subMeshCount > 1)
                 {
                     GUILayout.EndHorizontal();
                 }
-                GUILayout.Label($"Bounds: center {subMesh.bounds.center.ToString("g3")}, size {subMesh.bounds.size.ToString("g3")}");
             }
+            EditorGUI.indentLevel--;
+        }
 
-            GUILayout.EndVertical();
-            GUILayout.EndHorizontal();
-            
-            if (mesh.bindposes.Length != 0)
-            {
-                GUILayout.Space(5);
-                GUILayout.Label("Skin", EditorStyles.boldLabel);
-                
-                GUILayout.BeginHorizontal();
-                GUILayout.Space(10);
-                GUILayout.BeginVertical();
-                GUILayout.Space(5);
-                GUILayout.Label($"Skin Weight Count: {mesh.boneWeights.Length}");
-                GUILayout.EndVertical();
-                GUILayout.EndHorizontal();   
-            }
-            
-            if (mesh.blendShapeCount > 0)
-            {
-                GUILayout.Space(10);
-                GUILayout.Label("Blend Shapes", EditorStyles.boldLabel);
-                
-                GUILayout.BeginHorizontal();
-                GUILayout.Space(10);
-                GUILayout.BeginVertical();
-                GUILayout.Space(5);
-                GUILayout.Label($"Blend Shape Count {mesh.blendShapeCount}");
-                GUILayout.EndVertical();
-                GUILayout.EndHorizontal();   
-            }
-            
-            GUILayout.Space(5);
-            GUILayout.Label($"Is Readable: {mesh.isReadable}");
+        static void ShowVertexInfo(Mesh mesh, VertexAttributeDescriptor[] attributes)
+        {
+            var vertexSize = attributes.Sum(attr => ConvertFormatToSize(attr.format) * attr.dimension);
+            var bufferSizeStr = EditorUtility.FormatBytes(mesh.vertexCount * vertexSize);
+            EditorGUILayout.LabelField($"Vertices: {mesh.vertexCount} ({bufferSizeStr})", EditorStyles.boldLabel);
 
-            GUI.enabled = false;
+            EditorGUI.indentLevel++;
+            foreach (var a in attributes)
+            {
+                // skin related attributes listed separately
+                if (a.attribute == VertexAttribute.BlendIndices || a.attribute == VertexAttribute.BlendWeight)
+                    continue;
+                var title = a.attribute.ToString();
+                if (title.Contains("TexCoord"))
+                    title = title.Replace("TexCoord", "UV");
+                EditorGUILayout.LabelField(title, GetAttributeString(a));
+            }
+            EditorGUI.indentLevel--;
         }
 
         public void OnDisable()
