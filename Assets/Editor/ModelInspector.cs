@@ -645,6 +645,16 @@ namespace UnityEditor
             return elementSize * dimension;
         }
 
+        static void DrawColorRect(Rect rect, Color color)
+        {
+            EditorGUI.DrawRect(rect, color);
+            var dimmed = color * new Color(0.2f, 0.2f, 0.2f, 0.5f);
+            EditorGUI.DrawRect(new Rect(rect.x, rect.y, 1, rect.height), dimmed);
+            EditorGUI.DrawRect(new Rect(rect.x + rect.width - 1, rect.y, 1, rect.height), dimmed);
+            EditorGUI.DrawRect(new Rect(rect.x + 1, rect.y, rect.width - 2, 1), dimmed);
+            EditorGUI.DrawRect(new Rect(rect.x + 1, rect.y + rect.height - 1, rect.width - 2, 1), dimmed);
+        }
+
         public override void OnInspectorGUI()
         {
             GUI.enabled = true;
@@ -704,7 +714,8 @@ namespace UnityEditor
 
             GUILayout.Label(String.Format("Indices: {0} indices, {1} ({2})", totalIndexCount, mesh.indexFormat, EditorUtility.FormatBytes(totalIndexCount * formatMultiplier)), EditorStyles.boldLabel);
 
-            string subMeshText = mesh.subMeshCount == 1 ? "submesh" : "submeshes";
+            var submeshCount = mesh.subMeshCount;
+            string subMeshText = submeshCount == 1 ? "submesh" : "submeshes";
             GUILayout.BeginHorizontal();
             GUILayout.Space(10);
             GUILayout.BeginVertical();
@@ -723,9 +734,6 @@ namespace UnityEditor
                 string polygonType = subMesh.topology.ToString(); 
                 string baseVertex = (subMesh.baseVertex == 0) ? "" : ", base vertex " + subMesh.baseVertex;
                 
-                if (mesh.subMeshCount > 1)
-                    GUI.color = GetSubMeshTint(i);
-
                 var divisor = 3;
                 switch (subMesh.topology)
                 {
@@ -736,11 +744,21 @@ namespace UnityEditor
                     case MeshTopology.LineStrip: divisor = 2; break; // technically not correct, but eh
                 }
                 var primCount = subMesh.indexCount / divisor;
+                if (submeshCount > 1)
+                {
+                    GUILayout.BeginHorizontal();
+                    var rect = GUILayoutUtility.GetRect(GUIContent.none, GUI.skin.label, GUILayout.Width(7));
+                    var tint = GetSubMeshTint(i);
+                    DrawColorRect(rect, tint);
+                }
                 GUILayout.Label($"#{i}: {primCount} {polygonType.ToLowerInvariant()} ({subMesh.indexCount} indices starting from {subMesh.indexStart}){baseVertex}");
+                if (submeshCount > 1)
+                {
+                    GUILayout.EndHorizontal();
+                }
                 GUILayout.Label($"Bounds: center {subMesh.bounds.center.ToString("g3")}, size {subMesh.bounds.size.ToString("g3")}");
             }
 
-            GUI.color = Color.white;
             GUILayout.EndVertical();
             GUILayout.EndHorizontal();
             
