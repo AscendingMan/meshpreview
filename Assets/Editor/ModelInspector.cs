@@ -20,26 +20,32 @@ namespace UnityEditor
             public static GUIStyle preSliderThumb = "preSliderThumb";
         }
 
-        private PreviewRenderUtility m_PreviewUtility;
-        
-        private Material m_ShadedPreviewMaterial;
-        private static Material m_MeshMultiPreviewMaterial;
-        private Material m_WireMaterial;
-        private static Material m_LineMaterial;
+        internal struct PreviewSettings
+        {
+            public DisplayMode displayMode;
+            public int activeUVChannel;
+            public bool drawWire;
 
-        private Material m_activeMaterial;
+            public Vector3 orthoPosition;
+            public Vector2 previewDir;
+            public float zoomFactor;
+            public int checkerTextureMultiplier;
+
+            public Material shadedPreviewMaterial;
+            public Material activeMaterial;
+            public Material meshMultiPreviewMaterial;
+            public Material wireMaterial;
+            public Material lineMaterial;
+            
+            public bool[] availableDisplayModes;
+            public bool[] availableUVChannels;
+        }
+        
+        private PreviewRenderUtility m_PreviewUtility;
+        private PreviewSettings m_ModelInspectorSettings;
 
         private Texture2D m_CheckeredTexture;
-
-        public static Vector2 previewDir = new Vector2(-120, 20);        
         
-        static bool drawWire = true;
-        
-        private static int activeUVChannel = 0;
-        private static DisplayMode displayMode = DisplayMode.Shaded;
-        
-        private static float m_ZoomFactor = 1.0f;
-        private static Vector3 m_OrthoPosition = new Vector3(0.5f,0.5f,-1);
         
         private static string[] m_DisplayModes =
         {
@@ -52,7 +58,7 @@ namespace UnityEditor
             "Channel 0", "Channel 1", "Channel 2", "Channel 3", "Channel 4", "Channel 5", "Channel 6", "Channel 7"
         };
 
-        enum DisplayMode
+        internal enum DisplayMode
         {
             Shaded = 0,
             UVChecker = 1,
@@ -62,11 +68,6 @@ namespace UnityEditor
             Tangent = 5
         }
 
-        private static bool[] m_AvailableDisplayModes;
-        private static bool[] m_AvailableUVChannels;
-
-        private int m_checkerTextureMultiplier = 10;
-        
         internal static Material CreateWireframeMaterial()
         {
             var shader = Shader.Find("Hidden/Internal-Colored");
@@ -121,22 +122,25 @@ namespace UnityEditor
                 m_PreviewUtility.camera.fieldOfView = 30.0f;
                 m_PreviewUtility.camera.transform.position = new Vector3(5,5,0);
                 
-                m_ShadedPreviewMaterial = new Material(Shader.Find("Standard"));
-                m_WireMaterial = CreateWireframeMaterial();
-                m_MeshMultiPreviewMaterial = CreateMeshMultiPreviewMaterial();
-                m_LineMaterial = CreateLineMaterial();
-                m_activeMaterial = m_ShadedPreviewMaterial;
+                m_ModelInspectorSettings.shadedPreviewMaterial = new Material(Shader.Find("Standard"));
+                m_ModelInspectorSettings.wireMaterial = CreateWireframeMaterial();
+                m_ModelInspectorSettings.meshMultiPreviewMaterial = CreateMeshMultiPreviewMaterial();
+                m_ModelInspectorSettings.lineMaterial = CreateLineMaterial();
+                m_ModelInspectorSettings.activeMaterial = m_ModelInspectorSettings.shadedPreviewMaterial;
 
-                previewDir = new Vector2(0, 0);
-                
-                drawWire = true;
-                activeUVChannel = 0;
-                displayMode = 0;
-                
+                m_ModelInspectorSettings.displayMode = DisplayMode.Shaded;
+                m_ModelInspectorSettings.activeUVChannel = 0;
+                m_ModelInspectorSettings.drawWire = true;
+                m_ModelInspectorSettings.checkerTextureMultiplier = 10;
+
+                m_ModelInspectorSettings.orthoPosition = new Vector3(0.5f, 0.5f, -1);
+                m_ModelInspectorSettings.previewDir = new Vector2(-110, 0);
+                m_ModelInspectorSettings.zoomFactor = 1.0f;
+
                 m_CheckeredTexture = EditorGUIUtility.LoadRequired("Previews/Textures/textureChecker.png") as Texture2D;
 
-                m_AvailableDisplayModes = Enumerable.Repeat(true, 7).ToArray();
-                m_AvailableUVChannels = Enumerable.Repeat(true, 8).ToArray();
+                m_ModelInspectorSettings.availableDisplayModes = Enumerable.Repeat(true, 7).ToArray();
+                m_ModelInspectorSettings.availableUVChannels = Enumerable.Repeat(true, 8).ToArray();
 
                 CheckAvailableAttributes();
             }
@@ -144,14 +148,14 @@ namespace UnityEditor
         
         void ResetView()
         {
-            m_ZoomFactor = 1.0f;
-            m_OrthoPosition = new Vector3(0.5f,0.5f,-1);
+            m_ModelInspectorSettings.zoomFactor = 1.0f;
+            m_ModelInspectorSettings.orthoPosition = new Vector3(0.5f,0.5f,-1);
             
-            drawWire = true;
-            activeUVChannel = 0;
+            m_ModelInspectorSettings.drawWire = true;
+            m_ModelInspectorSettings.activeUVChannel = 0;
             
-            m_MeshMultiPreviewMaterial.SetInt("_UVChannel", activeUVChannel);
-            m_MeshMultiPreviewMaterial.SetTexture("_MainTex", null);
+            m_ModelInspectorSettings.meshMultiPreviewMaterial.SetInt("_UVChannel", m_ModelInspectorSettings.activeUVChannel);
+            m_ModelInspectorSettings.meshMultiPreviewMaterial.SetTexture("_MainTex", null);
         }
 
         void CheckAvailableAttributes()
@@ -162,17 +166,17 @@ namespace UnityEditor
                 return;
             
             if (!mesh.HasVertexAttribute(VertexAttribute.Color))
-                m_AvailableDisplayModes[(int)DisplayMode.VertexColor] = false;
+                m_ModelInspectorSettings.availableDisplayModes[(int)DisplayMode.VertexColor] = false;
             if (!mesh.HasVertexAttribute(VertexAttribute.Normal))
-                m_AvailableDisplayModes[(int)DisplayMode.Normals] = false;
+                m_ModelInspectorSettings.availableDisplayModes[(int)DisplayMode.Normals] = false;
             if (!mesh.HasVertexAttribute(VertexAttribute.Tangent))
-                m_AvailableDisplayModes[(int)DisplayMode.Tangent] = false;
+                m_ModelInspectorSettings.availableDisplayModes[(int)DisplayMode.Tangent] = false;
 
             int index = 0;
             for (int i = 4; i < 12; i++)
             {
                 if (!mesh.HasVertexAttribute((VertexAttribute)i))
-                    m_AvailableUVChannels[index] = false;
+                    m_ModelInspectorSettings.availableUVChannels[index] = false;
                 index++;
             }
         }
@@ -205,13 +209,13 @@ namespace UnityEditor
         private void SetUVChannel(object data)
         {
             int popupIndex = (int)data;
-            if (popupIndex < 0 || popupIndex >= m_AvailableUVChannels.Length)
+            if (popupIndex < 0 || popupIndex >= m_ModelInspectorSettings.availableUVChannels.Length)
                 return;
 
-            activeUVChannel = popupIndex;
+            m_ModelInspectorSettings.activeUVChannel = popupIndex;
             
-            if(displayMode == DisplayMode.UVLayout || displayMode == DisplayMode.UVChecker)
-                m_activeMaterial.SetInt("_UVChannel", popupIndex);
+            if(m_ModelInspectorSettings.displayMode == DisplayMode.UVLayout || m_ModelInspectorSettings.displayMode == DisplayMode.UVChecker)
+                m_ModelInspectorSettings.activeMaterial.SetInt("_UVChannel", popupIndex);
         }
         
         private void SetDisplayMode(object data)
@@ -220,29 +224,29 @@ namespace UnityEditor
             if (popupIndex < 0 || popupIndex >= m_DisplayModes.Length)
                 return;
 
-            displayMode = (DisplayMode)popupIndex;
+            m_ModelInspectorSettings.displayMode = (DisplayMode)popupIndex;
 
-            switch (displayMode)
+            switch (m_ModelInspectorSettings.displayMode)
             {
                 case DisplayMode.Shaded:
-                    OnDropDownAction(m_ShadedPreviewMaterial, 0, false);
+                    OnDropDownAction(m_ModelInspectorSettings.shadedPreviewMaterial, 0, false);
                     break;
                 case DisplayMode.UVChecker:
-                    OnDropDownAction(m_MeshMultiPreviewMaterial, 4, false);
-                    m_MeshMultiPreviewMaterial.SetTexture("_MainTex", m_CheckeredTexture);
-                    m_MeshMultiPreviewMaterial.mainTextureScale = new Vector2(m_checkerTextureMultiplier, m_checkerTextureMultiplier);
+                    OnDropDownAction(m_ModelInspectorSettings.meshMultiPreviewMaterial, 4, false);
+                    m_ModelInspectorSettings.meshMultiPreviewMaterial.SetTexture("_MainTex", m_CheckeredTexture);
+                    m_ModelInspectorSettings.meshMultiPreviewMaterial.mainTextureScale = new Vector2(m_ModelInspectorSettings.checkerTextureMultiplier, m_ModelInspectorSettings.checkerTextureMultiplier);
                     break;
                 case DisplayMode.UVLayout:
-                    OnDropDownAction(m_MeshMultiPreviewMaterial, 0, true);
+                    OnDropDownAction(m_ModelInspectorSettings.meshMultiPreviewMaterial, 0, true);
                     break;
                 case DisplayMode.VertexColor:
-                    OnDropDownAction(m_MeshMultiPreviewMaterial, 1, false);
+                    OnDropDownAction(m_ModelInspectorSettings.meshMultiPreviewMaterial, 1, false);
                     break;
                 case DisplayMode.Normals:
-                    OnDropDownAction(m_MeshMultiPreviewMaterial, 2, false);
+                    OnDropDownAction(m_ModelInspectorSettings.meshMultiPreviewMaterial, 2, false);
                     break;
                 case DisplayMode.Tangent:
-                    OnDropDownAction(m_MeshMultiPreviewMaterial, 3, false);
+                    OnDropDownAction(m_ModelInspectorSettings.meshMultiPreviewMaterial, 3, false);
                     break;
             }
         }
@@ -250,9 +254,7 @@ namespace UnityEditor
         internal static void RenderMeshPreview(
             Mesh mesh,
             PreviewRenderUtility previewUtility,
-            Material litMaterial,
-            Material wireMaterial,
-            Vector2 direction,
+            PreviewSettings previewSettings,
             int meshSubset)
         {
             if (mesh == null || previewUtility == null)
@@ -264,13 +266,13 @@ namespace UnityEditor
             previewUtility.camera.nearClipPlane = 0.0001f;
             previewUtility.camera.farClipPlane = 1000f;
 
-            if (displayMode == DisplayMode.UVLayout)
+            if (previewSettings.displayMode == DisplayMode.UVLayout)
             {
                 previewUtility.camera.orthographic = true;
-                previewUtility.camera.orthographicSize = m_ZoomFactor;
-                renderCamTransform.position = m_OrthoPosition;
+                previewUtility.camera.orthographicSize = previewSettings.zoomFactor;
+                renderCamTransform.position = previewSettings.orthoPosition;
                 renderCamTransform.rotation = Quaternion.identity;
-                DrawUVLayout(mesh, previewUtility);
+                DrawUVLayout(mesh, previewUtility, previewSettings);
                 return;
             }
 
@@ -278,7 +280,7 @@ namespace UnityEditor
             float distance = 4.0f * halfSize;
             
             previewUtility.camera.orthographic = false;
-            Quaternion camRotation = Quaternion.Euler(-previewDir.y, -previewDir.x, 0);
+            Quaternion camRotation = Quaternion.Euler(-previewSettings.previewDir.y, -previewSettings.previewDir.x, 0);
             Vector3 camPosition = camRotation * (Vector3.forward * -distance);
             renderCamTransform.position = camPosition;
             renderCamTransform.rotation = camRotation;
@@ -289,15 +291,15 @@ namespace UnityEditor
 
             previewUtility.ambientColor = new Color(.1f, .1f, .1f, 0);
             
-            RenderMeshPreviewSkipCameraAndLighting(mesh, bounds, previewUtility, litMaterial, wireMaterial, null, direction, meshSubset);
+            RenderMeshPreviewSkipCameraAndLighting(mesh, bounds, previewUtility, previewSettings, null, meshSubset);
         }
 
-        static void DrawUVLayout(Mesh mesh, PreviewRenderUtility previewUtility)
+        static void DrawUVLayout(Mesh mesh, PreviewRenderUtility previewUtility, PreviewSettings previewSettings)
         {
             GL.PushMatrix();
 
             // draw UV grid
-            m_LineMaterial.SetPass(0);
+            previewSettings.lineMaterial.SetPass(0);
 
             GL.LoadProjectionMatrix(previewUtility.camera.projectionMatrix);
             GL.MultMatrix(previewUtility.camera.worldToCameraMatrix);
@@ -330,7 +332,7 @@ namespace UnityEditor
             
             // draw the mesh
             GL.LoadIdentity();
-            m_MeshMultiPreviewMaterial.SetPass(0);
+            previewSettings.meshMultiPreviewMaterial.SetPass(0);
             GL.wireframe = true;
             Graphics.DrawMeshNow(mesh, previewUtility.camera.worldToCameraMatrix);
             GL.wireframe = false;
@@ -352,16 +354,14 @@ namespace UnityEditor
             Mesh mesh,
             Bounds bounds,
             PreviewRenderUtility previewUtility,
-            Material litMaterial,
-            Material wireMaterial,
+            PreviewSettings previewSettings,
             MaterialPropertyBlock customProperties,
-            Vector2 direction,
             int meshSubset) // -1 for whole mesh
         {
             if (mesh == null || previewUtility == null)
                 return;
 
-            Quaternion rot = Quaternion.Euler(direction.y, 0, 0) * Quaternion.Euler(0, direction.x, 0);
+            Quaternion rot = Quaternion.Euler(previewSettings.previewDir.y, 0, 0) * Quaternion.Euler(0, previewSettings.previewDir.x, 0);
             Vector3 pos = rot * (-bounds.center);
 
             bool oldFog = RenderSettings.fog;
@@ -370,14 +370,14 @@ namespace UnityEditor
             int submeshes = mesh.subMeshCount;
             var tintSubmeshes = false;
             var colorPropID = 0;
-            if (submeshes > 1 && displayMode == DisplayMode.Shaded && customProperties == null & meshSubset == -1)
+            if (submeshes > 1 && previewSettings.displayMode == DisplayMode.Shaded && customProperties == null & meshSubset == -1)
             {
                 tintSubmeshes = true;
                 customProperties = new MaterialPropertyBlock();
                 colorPropID = Shader.PropertyToID("_Color");
             }
 
-            if (litMaterial != null)
+            if (previewSettings.activeMaterial != null)
             {
                 previewUtility.camera.clearFlags = CameraClearFlags.Nothing;
                 if (meshSubset < 0 || meshSubset >= submeshes)
@@ -386,20 +386,20 @@ namespace UnityEditor
                     {
                         if (tintSubmeshes)
                             customProperties.SetColor(colorPropID, GetSubMeshTint(i));
-                        previewUtility.DrawMesh(mesh, pos, rot, litMaterial, i, customProperties);
+                        previewUtility.DrawMesh(mesh, pos, rot, previewSettings.activeMaterial, i, customProperties);
                     }
                 }
                 else
-                    previewUtility.DrawMesh(mesh, pos, rot, litMaterial, meshSubset, customProperties);
+                    previewUtility.DrawMesh(mesh, pos, rot, previewSettings.activeMaterial, meshSubset, customProperties);
                 previewUtility.Render();
             }
 
-            if (wireMaterial != null && drawWire)
+            if (previewSettings.wireMaterial != null && previewSettings.drawWire)
             {
                 previewUtility.camera.clearFlags = CameraClearFlags.Nothing;
                 GL.wireframe = true;
                 if (tintSubmeshes)
-                    customProperties.SetColor(colorPropID, wireMaterial.color);
+                    customProperties.SetColor(colorPropID, previewSettings.wireMaterial.color);
                 if (meshSubset < 0 || meshSubset >= submeshes)
                 {
                     for (int i = 0; i < submeshes; ++i)
@@ -409,11 +409,11 @@ namespace UnityEditor
                         var topology = mesh.GetTopology(i);
                         if (topology == MeshTopology.Lines || topology == MeshTopology.LineStrip || topology == MeshTopology.Points)
                             continue;
-                        previewUtility.DrawMesh(mesh, pos, rot, wireMaterial, i, customProperties);
+                        previewUtility.DrawMesh(mesh, pos, rot, previewSettings.wireMaterial, i, customProperties);
                     }
                 }
                 else
-                    previewUtility.DrawMesh(mesh, pos, rot, wireMaterial, meshSubset, customProperties);
+                    previewUtility.DrawMesh(mesh, pos, rot, previewSettings.wireMaterial, meshSubset, customProperties);
                 previewUtility.Render();
                 GL.wireframe = false;
             }
@@ -423,7 +423,7 @@ namespace UnityEditor
 
         private void DoRenderPreview()
         {
-            RenderMeshPreview(target as Mesh, m_PreviewUtility, m_activeMaterial, m_WireMaterial, previewDir, -1);
+            RenderMeshPreview(target as Mesh, m_PreviewUtility, m_ModelInspectorSettings,-1);
         }
 
         public override Texture2D RenderStaticPreview(string assetPath, UnityEngine.Object[] subAssets, int width, int height)
@@ -450,30 +450,30 @@ namespace UnityEditor
 
         void DrawMeshPreviewToolbar()
         {
-            if (displayMode == DisplayMode.UVChecker)
+            if (m_ModelInspectorSettings.displayMode == DisplayMode.UVChecker)
             {
-                int oldVal = m_checkerTextureMultiplier;
+                int oldVal = m_ModelInspectorSettings.checkerTextureMultiplier;
                 
                 float sliderWidth = EditorStyles.label.CalcSize(new GUIContent("--------")).x;
                 Rect sliderRect = EditorGUILayout.GetControlRect(GUILayout.Width(sliderWidth));
                 sliderRect.x += 3;
                 
-                m_checkerTextureMultiplier = (int)GUI.HorizontalSlider(sliderRect, m_checkerTextureMultiplier, 1, 30, Styles.preSlider, Styles.preSliderThumb);
-                if(oldVal != m_checkerTextureMultiplier)
-                    m_activeMaterial.mainTextureScale = new Vector2(m_checkerTextureMultiplier, m_checkerTextureMultiplier);
+                m_ModelInspectorSettings.checkerTextureMultiplier = (int)GUI.HorizontalSlider(sliderRect, m_ModelInspectorSettings.checkerTextureMultiplier, 1, 30, Styles.preSlider, Styles.preSliderThumb);
+                if(oldVal != m_ModelInspectorSettings.checkerTextureMultiplier)
+                    m_ModelInspectorSettings.activeMaterial.mainTextureScale = new Vector2(m_ModelInspectorSettings.checkerTextureMultiplier, m_ModelInspectorSettings.checkerTextureMultiplier);
             }
             
-            if (displayMode == DisplayMode.UVLayout || displayMode == DisplayMode.UVChecker)
+            if (m_ModelInspectorSettings.displayMode == DisplayMode.UVLayout || m_ModelInspectorSettings.displayMode == DisplayMode.UVChecker)
             {
                 float channelDropDownWidth = EditorStyles.toolbarDropDown.CalcSize(new GUIContent("Channel 6")).x;
                 Rect channelDropdownRect = EditorGUILayout.GetControlRect(GUILayout.Width(channelDropDownWidth));
                 channelDropdownRect.y -= 1;
                 channelDropdownRect.x += 5;
-                GUIContent channel = new GUIContent("Channel " + activeUVChannel, Styles.uvChannelDropdown.tooltip);
+                GUIContent channel = new GUIContent("Channel " + m_ModelInspectorSettings.activeUVChannel, Styles.uvChannelDropdown.tooltip);
                 
                 if (EditorGUI.DropdownButton(channelDropdownRect, channel, FocusType.Passive, EditorStyles.toolbarDropDown))
                     DoPopup(channelDropdownRect, m_UVChannels,
-                        activeUVChannel, SetUVChannel, m_AvailableUVChannels);
+                        m_ModelInspectorSettings.activeUVChannel, SetUVChannel, m_ModelInspectorSettings.availableUVChannels);
             }
 
             // calculate width based on the longest value in display modes
@@ -481,14 +481,14 @@ namespace UnityEditor
             Rect displayModeDropdownRect = EditorGUILayout.GetControlRect(GUILayout.Width(displayModeDropDownWidth));
             displayModeDropdownRect.y -= 1;
             displayModeDropdownRect.x += 2;
-            GUIContent displayModeDropdownContent = new GUIContent(m_DisplayModes[(int)displayMode], Styles.displayModeDropdown.tooltip);
+            GUIContent displayModeDropdownContent = new GUIContent(m_DisplayModes[(int)m_ModelInspectorSettings.displayMode], Styles.displayModeDropdown.tooltip);
 
             if(EditorGUI.DropdownButton(displayModeDropdownRect, displayModeDropdownContent, FocusType.Passive, EditorStyles.toolbarDropDown))
-                DoPopup(displayModeDropdownRect, m_DisplayModes, (int)displayMode, SetDisplayMode, m_AvailableDisplayModes);
+                DoPopup(displayModeDropdownRect, m_DisplayModes, (int)m_ModelInspectorSettings.displayMode, SetDisplayMode, m_ModelInspectorSettings.availableDisplayModes);
 
-            using (new EditorGUI.DisabledScope(displayMode == DisplayMode.UVLayout))
+            using (new EditorGUI.DisabledScope(m_ModelInspectorSettings.displayMode == DisplayMode.UVLayout))
             {            
-                drawWire = GUILayout.Toggle(drawWire, Styles.wireframeToggle, EditorStyles.toolbarButton);
+                m_ModelInspectorSettings.drawWire = GUILayout.Toggle(m_ModelInspectorSettings.drawWire, Styles.wireframeToggle, EditorStyles.toolbarButton);
             }
         }
 
@@ -496,10 +496,10 @@ namespace UnityEditor
         {
             ResetView();
 
-            m_activeMaterial = mat;
+            m_ModelInspectorSettings.activeMaterial = mat;
 
-            m_activeMaterial.SetInt("_Mode", mode);
-            m_activeMaterial.SetInt("_UVChannel", 0);
+            m_ModelInspectorSettings.activeMaterial.SetInt("_Mode", mode);
+            m_ModelInspectorSettings.activeMaterial.SetInt("_UVChannel", 0);
         }
         
         public override void OnPreviewGUI(Rect r, GUIStyle background)
@@ -518,14 +518,14 @@ namespace UnityEditor
             Type guiPreview = editorAssembly.GetType("PreviewGUI");
             MethodInfo drag2D = guiPreview.GetMethod("Drag2D");
 
-            if(displayMode != DisplayMode.UVLayout)
-                previewDir = (Vector2)drag2D?.Invoke(null, new object[] {previewDir, r});
+            if(m_ModelInspectorSettings.displayMode != DisplayMode.UVLayout)
+                m_ModelInspectorSettings.previewDir = (Vector2)drag2D?.Invoke(null, new object[] {m_ModelInspectorSettings.previewDir, r});
             //previewDir = PreviewGUI.Drag2D(previewDir, r);
             
-            if (Event.current.type == EventType.ScrollWheel && displayMode == DisplayMode.UVLayout)
+            if (Event.current.type == EventType.ScrollWheel && m_ModelInspectorSettings.displayMode == DisplayMode.UVLayout)
                 MeshPreviewZoom(r, Event.current);
 
-            if (Event.current.type == EventType.MouseDrag && displayMode == DisplayMode.UVLayout)
+            if (Event.current.type == EventType.MouseDrag && m_ModelInspectorSettings.displayMode == DisplayMode.UVLayout)
                 MeshPreviewPan(r, Event.current);
 
             if (Event.current.type != EventType.Repaint)
@@ -546,7 +546,7 @@ namespace UnityEditor
                 return;
             }
             float zoomDelta = (HandleUtility.niceMouseDeltaZoom * 0.5f) * 0.05f;
-            var newZoom = m_ZoomFactor + m_ZoomFactor * zoomDelta;
+            var newZoom = m_ModelInspectorSettings.zoomFactor + m_ModelInspectorSettings.zoomFactor * zoomDelta;
             newZoom = Mathf.Clamp(newZoom, 0.1f, 10.0f);
 
             // we want to zoom around current mouse position
@@ -554,12 +554,12 @@ namespace UnityEditor
                 evt.mousePosition.x / rect.width,
                 1 - evt.mousePosition.y / rect.height);
             var mouseWorldPos = m_PreviewUtility.camera.ViewportToWorldPoint(mouseViewPos);
-            var mouseToCamPos = m_OrthoPosition - mouseWorldPos;
-            var newCamPos = mouseWorldPos + mouseToCamPos * (newZoom / m_ZoomFactor);
-            m_OrthoPosition.x = newCamPos.x;
-            m_OrthoPosition.y = newCamPos.y;
+            var mouseToCamPos = m_ModelInspectorSettings.orthoPosition - mouseWorldPos;
+            var newCamPos = mouseWorldPos + mouseToCamPos * (newZoom / m_ModelInspectorSettings.zoomFactor);
+            m_ModelInspectorSettings.orthoPosition.x = newCamPos.x;
+            m_ModelInspectorSettings.orthoPosition.y = newCamPos.y;
 
-            m_ZoomFactor = newZoom;
+            m_ModelInspectorSettings.zoomFactor = newZoom;
             evt.Use(); 
         }
         
@@ -571,7 +571,7 @@ namespace UnityEditor
                 return;
             }
             var cam = m_PreviewUtility.camera;
-            var screenPos = cam.WorldToScreenPoint(m_OrthoPosition);
+            var screenPos = cam.WorldToScreenPoint(m_ModelInspectorSettings.orthoPosition);
             // event delta is in "screen" units of the preview rect, but the
             // preview camera is rendering into a render target that could
             // be different size; have to adjust drag position to match
@@ -581,8 +581,8 @@ namespace UnityEditor
                 0);
             screenPos += delta;
             var worldPos = cam.ScreenToWorldPoint(screenPos);
-            m_OrthoPosition.x = worldPos.x;
-            m_OrthoPosition.y = worldPos.y;
+            m_ModelInspectorSettings.orthoPosition.x = worldPos.x;
+            m_ModelInspectorSettings.orthoPosition.y = worldPos.y;
             evt.Use();
         }
 
@@ -790,10 +790,10 @@ namespace UnityEditor
                 m_PreviewUtility.Cleanup();
                 m_PreviewUtility = null;
             }
-            DestroyImmediate(m_ShadedPreviewMaterial);
-            DestroyImmediate(m_WireMaterial);
-            DestroyImmediate(m_MeshMultiPreviewMaterial);
-            DestroyImmediate(m_LineMaterial);
+            DestroyImmediate(m_ModelInspectorSettings.shadedPreviewMaterial);
+            DestroyImmediate(m_ModelInspectorSettings.wireMaterial);
+            DestroyImmediate(m_ModelInspectorSettings.meshMultiPreviewMaterial);
+            DestroyImmediate(m_ModelInspectorSettings.lineMaterial);
         }
     }
 }
