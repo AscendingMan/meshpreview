@@ -31,19 +31,14 @@ namespace UnityEditor
             public float zoomFactor = 1.0f;
             public int checkerTextureMultiplier = 10;
 
-            public Material shadedPreviewMaterial = new Material(Shader.Find("Standard"));
+            public Material shadedPreviewMaterial;
             public Material activeMaterial;
             public Material meshMultiPreviewMaterial;
-            public Material wireMaterial = CreateWireframeMaterial();
-            public Material lineMaterial = CreateLineMaterial();
+            public Material wireMaterial;
+            public Material lineMaterial;
             
             public bool[] availableDisplayModes = Enumerable.Repeat(true, 7).ToArray();
             public bool[] availableUVChannels = Enumerable.Repeat(true, 8).ToArray();
-
-            public PreviewSettings()
-            {
-                activeMaterial = shadedPreviewMaterial;
-            }
         }
         
         private PreviewRenderUtility m_PreviewUtility;
@@ -130,7 +125,10 @@ namespace UnityEditor
             if (m_Settings == null)
             {
                 m_Settings = new PreviewSettings();
+                m_Settings.shadedPreviewMaterial = new Material(Shader.Find("Standard"));
+                m_Settings.wireMaterial = CreateWireframeMaterial();
                 m_Settings.meshMultiPreviewMaterial = CreateMeshMultiPreviewMaterial();
+                m_Settings.lineMaterial = CreateLineMaterial();
                 m_Settings.activeMaterial = m_Settings.shadedPreviewMaterial;
                 
                 m_Settings.orthoPosition = new Vector3(0.5f, 0.5f, -1);
