@@ -39,6 +39,10 @@ Shader "Unlit/Mesh-MultiPreview"
                 float4 uv1 : TEXCOORD1;
                 float4 uv2 : TEXCOORD2;
                 float4 uv3 : TEXCOORD3;
+                float2 uv4 : TEXCOORD4;
+                float4 uv5 : TEXCOORD5;
+                float4 uv6 : TEXCOORD6;
+                float4 uv7 : TEXCOORD7;
                 float4 tangent : TANGENT;
                 float3 normal : NORMAL;
                 fixed4 color : COLOR;
@@ -64,6 +68,14 @@ Shader "Unlit/Mesh-MultiPreview"
                     return v.uv2.xy;
                 if(_UVChannel == 3)
                     return v.uv3.xy;
+                if(_UVChannel == 4)
+                    return v.uv4.xy;
+                if(_UVChannel == 5)
+                    return v.uv5.xy;
+                if(_UVChannel == 6)
+                    return v.uv6.xy;
+                if(_UVChannel == 7)
+                    return v.uv7.xy;
                 return v.uv0.xy;
             }
 
