@@ -629,9 +629,9 @@ namespace UnityEditor
             EditorGUI.DrawRect(rect, color);
             var dimmed = color * new Color(0.2f, 0.2f, 0.2f, 0.5f);
             EditorGUI.DrawRect(new Rect(rect.x, rect.y, 1, rect.height), dimmed);
-            EditorGUI.DrawRect(new Rect(rect.x + rect.width - 1, rect.y, 1, rect.height), dimmed);
-            EditorGUI.DrawRect(new Rect(rect.x + 1, rect.y, rect.width - 2, 1), dimmed);
-            EditorGUI.DrawRect(new Rect(rect.x + 1, rect.y + rect.height - 1, rect.width - 2, 1), dimmed);
+            EditorGUI.DrawRect(new Rect(rect.x + rect.width-1, rect.y, 1, rect.height), dimmed);
+            EditorGUI.DrawRect(new Rect(rect.x, rect.y, rect.width, 1), dimmed);
+            EditorGUI.DrawRect(new Rect(rect.x, rect.y + rect.height-1, rect.width, 1), dimmed);
         }
 
         public override void OnInspectorGUI()
