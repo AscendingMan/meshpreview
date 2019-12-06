@@ -1,3 +1,7 @@
+# How to use
+
+Copy Assets/Editor and Assets/Editor Default Resources folders to your project and the current Mesh Inspector will be overridden with the updated one. Should work with Editor versions 2019.3 and up.
+
 # What's new in the updated Mesh Inspector
 ## Mesh Inspector
 The top part of the Inspector was updated to display information about mesh data format, memory usage, submeshes etc.
