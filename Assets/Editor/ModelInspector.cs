@@ -789,10 +789,13 @@ namespace UnityEditor
                 m_PreviewUtility.Cleanup();
                 m_PreviewUtility = null;
             }
-            DestroyImmediate(m_Settings.shadedPreviewMaterial);
-            DestroyImmediate(m_Settings.wireMaterial);
-            DestroyImmediate(m_Settings.meshMultiPreviewMaterial);
-            DestroyImmediate(m_Settings.lineMaterial);
+            if (m_Settings != null)
+            {
+                DestroyImmediate(m_Settings.shadedPreviewMaterial);
+                DestroyImmediate(m_Settings.wireMaterial);
+                DestroyImmediate(m_Settings.meshMultiPreviewMaterial);
+                DestroyImmediate(m_Settings.lineMaterial);
+            }
         }
     }
 }
