@@ -1,6 +1,6 @@
 # How to use
 
-Copy Assets/Editor and Assets/Editor Default Resources folders to your project and the current Mesh Inspector will be overridden with the updated one. Should work with Editor versions 2019.3 and up.
+Copy `Assets/Editor` and `Assets/Editor Default Resources` folders into your project and the built-in Mesh Inspector will be overridden with the updated one. Should work with Editor versions 2019.3 and up.
 
 # What's new in the updated Mesh Inspector
 ## Mesh Inspector
@@ -40,13 +40,13 @@ Previews Vertex Colors of a Mesh.
 
 ## Normals
 
-Preview Mesh Normals.
+Preview Mesh Normals. We've opted to not displays normals as tiny vectors poking out of vertices, since it feels like without full-on navigation inside the preview window, they would just be a mess for non-trivial meshes.
 
 ![NormalPreview]
 
 ## Tangents
 
-Preview Mesh Tangents.
+Preview Mesh Tangents. We've opted to not displays tangents as tiny vectors poking out of vertices, since it feels like without full-on navigation inside the preview window, they would just be a mess for non-trivial meshes.
 
 ![TangentPreview]
 
