@@ -1,8 +1,10 @@
 using UnityEngine;
-using System.Reflection;
-using System;
-using System.Linq;
 using UnityEngine.Rendering;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using RenderSettings = UnityEngine.RenderSettings;
 
 namespace UnityEditor
 {
@@ -24,10 +26,12 @@ namespace UnityEditor
         {
             public DisplayMode displayMode = DisplayMode.Shaded;
             public int activeUVChannel = 0;
+            public int activeBlendshape = 0;
             public bool drawWire = true;
-            
+
             public Vector3 orthoPosition = new Vector3(0.0f, 0.0f, 0.0f);
             public Vector2 previewDir = new Vector2(0, 0);
+            public Vector3 pivotPositionOffset = Vector3.zero;
             public float zoomFactor = 1.0f;
             public int checkerTextureMultiplier = 10;
 
@@ -36,9 +40,12 @@ namespace UnityEditor
             public Material meshMultiPreviewMaterial;
             public Material wireMaterial;
             public Material lineMaterial;
-            
+
             public bool[] availableDisplayModes = Enumerable.Repeat(true, 7).ToArray();
             public bool[] availableUVChannels = Enumerable.Repeat(true, 8).ToArray();
+
+            public Mesh skinnedMesh;
+            public SkinnedMeshRenderer skinnedMeshRenderer;
         }
         
         private PreviewRenderUtility m_PreviewUtility;
@@ -46,17 +53,19 @@ namespace UnityEditor
 
         private Texture2D m_CheckeredTexture;
         
+        static Vector2 m_scrollPos;
+
         private static string[] m_DisplayModes =
         {
             "Shaded", "UV Checker", "UV Layout",
-            "Vertex Color", "Normals", "Tangents"
+            "Vertex Color", "Normals", "Tangents", "Blendshapes"
         };
 
         private static string[] m_UVChannels =
         {
             "Channel 0", "Channel 1", "Channel 2", "Channel 3", "Channel 4", "Channel 5", "Channel 6", "Channel 7"
         };
-
+        
         internal enum DisplayMode
         {
             Shaded = 0,
@@ -64,15 +73,18 @@ namespace UnityEditor
             UVLayout = 2,
             VertexColor = 3,
             Normals = 4,
-            Tangent = 5
+            Tangent = 5,
+            Blendshapes = 6
         }
 
+        private List<string> m_BlendShapes;
+        
         internal static Material CreateWireframeMaterial()
         {
             var shader = Shader.Find("Hidden/Internal-Colored");
             if (!shader)
             {
-                Debug.LogWarning("Could not find the builtin Colored shader");
+                Debug.LogWarning("Could not find the built-in Colored shader");
                 return null;
             }
             var mat = new Material(shader);
@@ -95,13 +107,13 @@ namespace UnityEditor
             mat.hideFlags = HideFlags.HideAndDontSave;
             return mat;
         }
-        
+
         static Material CreateLineMaterial()
         {
             Shader shader = Shader.Find("Hidden/Internal-Colored");
             if (!shader)
             {
-                Debug.LogWarning("Could not find the builtin Colored shader");
+                Debug.LogWarning("Could not find the built-in Colored shader");
                 return null;
             }
             var mat = new Material(shader);
@@ -112,14 +124,14 @@ namespace UnityEditor
             mat.SetInt("_ZWrite", 0);
             return mat;
         }
-        
+
         void Init()
         {
             if (m_PreviewUtility == null)
             {
                 m_PreviewUtility = new PreviewRenderUtility();
                 m_PreviewUtility.camera.fieldOfView = 30.0f;
-                m_PreviewUtility.camera.transform.position = new Vector3(5,5,0);
+                m_PreviewUtility.camera.transform.position = new Vector3(5, 5, 0);
             }
 
             if (m_Settings == null)
@@ -130,40 +142,40 @@ namespace UnityEditor
                 m_Settings.meshMultiPreviewMaterial = CreateMeshMultiPreviewMaterial();
                 m_Settings.lineMaterial = CreateLineMaterial();
                 m_Settings.activeMaterial = m_Settings.shadedPreviewMaterial;
-                
+
                 m_Settings.orthoPosition = new Vector3(0.5f, 0.5f, -1);
                 m_Settings.previewDir = new Vector2(-110, 0);
                 m_Settings.zoomFactor = 1.0f;
                 
-                m_Settings.availableDisplayModes = Enumerable.Repeat(true, 7).ToArray();
-                m_Settings.availableUVChannels = Enumerable.Repeat(true, 8).ToArray();
+                m_Settings.skinnedMesh = new Mesh();
 
+                m_BlendShapes = new List<string>();
                 CheckAvailableAttributes();
             }
             
             m_CheckeredTexture = EditorGUIUtility.LoadRequired("Previews/Textures/textureChecker.png") as Texture2D;
-
         }
-        
+
         void ResetView()
         {
             m_Settings.zoomFactor = 1.0f;
-            m_Settings.orthoPosition = new Vector3(0.5f,0.5f,-1);
+            m_Settings.orthoPosition = new Vector3(0.5f, 0.5f, -1);
             
-            m_Settings.drawWire = true;
             m_Settings.activeUVChannel = 0;
-            
+
             m_Settings.meshMultiPreviewMaterial.SetInt("_UVChannel", m_Settings.activeUVChannel);
             m_Settings.meshMultiPreviewMaterial.SetTexture("_MainTex", null);
+
+            m_Settings.activeBlendshape = 0;
         }
 
         void CheckAvailableAttributes()
         {
             Mesh mesh = target as Mesh;
-            
-            if(!mesh)
+
+            if (!mesh)
                 return;
-            
+
             if (!mesh.HasVertexAttribute(VertexAttribute.Color))
                 m_Settings.availableDisplayModes[(int)DisplayMode.VertexColor] = false;
             if (!mesh.HasVertexAttribute(VertexAttribute.Normal))
@@ -178,8 +190,21 @@ namespace UnityEditor
                     m_Settings.availableUVChannels[index] = false;
                 index++;
             }
+
+            if (mesh.blendShapeCount > 0)
+            {
+                for (int i = 0; i < mesh.blendShapeCount; i++)
+                {
+                    m_BlendShapes.Add(mesh.GetBlendShapeName(i));
+                }
+            }
+            else
+            {
+                m_Settings.availableDisplayModes[(int)DisplayMode.Blendshapes] = false;
+            }
+                
         }
-        
+
         public override void OnPreviewSettings()
         {
             if (!ShaderUtil.hardwareSupportsRectRenderTexture)
@@ -189,6 +214,22 @@ namespace UnityEditor
 
             DrawMeshPreviewToolbar();
         }
+        
+        void DoLightSettings(Rect rect)
+        {
+            EditorGUIUtility.wideMode = true;
+
+            Rect lightDirRect = rect;
+            lightDirRect.width *= 0.5f; 
+            Vector3 lightDir1 = m_PreviewUtility.lights[0].transform.rotation.eulerAngles;
+            m_PreviewUtility.lights[0].transform.rotation = Quaternion.Euler(EditorGUI.Vector3Field(lightDirRect, "Light Direction 1", lightDir1));
+
+            lightDirRect.x += lightDirRect.width;
+            Vector3 lightDir2 = m_PreviewUtility.lights[1].transform.rotation.eulerAngles;
+            m_PreviewUtility.lights[1].transform.rotation = Quaternion.Euler(EditorGUI.Vector3Field(lightDirRect, "Light Direction 2", lightDir2));
+            
+            EditorGUIUtility.wideMode = false;
+        }
 
         private void DoPopup(Rect popupRect, string[] elements, int selectedIndex, GenericMenu.MenuFunction2 func, bool[] disabledItems)
         {
@@ -197,14 +238,14 @@ namespace UnityEditor
             {
                 var element = elements[i];
                 
-                if(disabledItems[i])
+                if (disabledItems == null || disabledItems[i])
                     menu.AddItem(new GUIContent(element), i == selectedIndex, func, i);
                 else
                     menu.AddDisabledItem(new GUIContent(element));
             }
             menu.DropDown(popupRect);
         }
-        
+
         private void SetUVChannel(object data)
         {
             int popupIndex = (int)data;
@@ -212,11 +253,11 @@ namespace UnityEditor
                 return;
 
             m_Settings.activeUVChannel = popupIndex;
-            
-            if(m_Settings.displayMode == DisplayMode.UVLayout || m_Settings.displayMode == DisplayMode.UVChecker)
+
+            if (m_Settings.displayMode == DisplayMode.UVLayout || m_Settings.displayMode == DisplayMode.UVChecker)
                 m_Settings.activeMaterial.SetInt("_UVChannel", popupIndex);
         }
-        
+
         private void SetDisplayMode(object data)
         {
             int popupIndex = (int)data;
@@ -247,7 +288,32 @@ namespace UnityEditor
                 case DisplayMode.Tangent:
                     OnDropDownAction(m_Settings.meshMultiPreviewMaterial, 3, false);
                     break;
+                case DisplayMode.Blendshapes:
+                    OnDropDownAction(m_Settings.shadedPreviewMaterial, 0, false);
+                    GetSkinnedMeshRender();
+                    SetSingleBlendShapeWeight();
+                    break;
             }
+        }
+        
+        private void SetBlendshape(object data)
+        {
+            int popupIndex = (int)data;
+            if (popupIndex < 0 || popupIndex >= m_BlendShapes.Count)
+                return;
+
+            m_Settings.activeBlendshape = popupIndex;
+            
+            SetSingleBlendShapeWeight();
+        }
+        
+        void SetSingleBlendShapeWeight()
+        {
+            for (int i = 0; i < m_BlendShapes.Count; i++)
+                m_Settings.skinnedMeshRenderer.SetBlendShapeWeight(i, 0f);
+            
+            m_Settings.skinnedMeshRenderer.SetBlendShapeWeight(m_Settings.activeBlendshape, 100f);
+            m_Settings.skinnedMeshRenderer.BakeMesh(m_Settings.skinnedMesh);
         }
         
         internal static void RenderMeshPreview(
@@ -260,7 +326,7 @@ namespace UnityEditor
                 return;
 
             Bounds bounds = mesh.bounds;
-            
+
             Transform renderCamTransform = previewUtility.camera.GetComponent<Transform>();
             previewUtility.camera.nearClipPlane = 0.0001f;
             previewUtility.camera.farClipPlane = 1000f;
@@ -274,22 +340,23 @@ namespace UnityEditor
                 DrawUVLayout(mesh, previewUtility, settings);
                 return;
             }
-
+            
             float halfSize = bounds.extents.magnitude;
             float distance = 4.0f * halfSize;
-            
+
             previewUtility.camera.orthographic = false;
             Quaternion camRotation = Quaternion.Euler(-settings.previewDir.y, -settings.previewDir.x, 0);
-            Vector3 camPosition = camRotation * (Vector3.forward * -distance);
+            Vector3 camPosition = camRotation * (Vector3.forward * -distance * settings.zoomFactor) + settings.pivotPositionOffset;
+
             renderCamTransform.position = camPosition;
             renderCamTransform.rotation = camRotation;
 
             previewUtility.lights[0].intensity = 1.4f;
-            previewUtility.lights[0].transform.rotation = Quaternion.Euler(40f, 40f, 0);
             previewUtility.lights[1].intensity = 1.4f;
 
             previewUtility.ambientColor = new Color(.1f, .1f, .1f, 0);
-            
+            previewUtility.ambientColor = new Color(.1f, .1f, .1f, 0);
+
             RenderMeshPreviewSkipCameraAndLighting(mesh, bounds, previewUtility, settings, null, meshSubset);
         }
 
@@ -302,7 +369,7 @@ namespace UnityEditor
 
             GL.LoadProjectionMatrix(previewUtility.camera.projectionMatrix);
             GL.MultMatrix(previewUtility.camera.worldToCameraMatrix);
-            
+
             GL.Begin(GL.LINES);
             const float step = 0.125f;
             for (var g = -2.0f; g <= 3.0f; g += step)
@@ -328,14 +395,14 @@ namespace UnityEditor
                 }
             }
             GL.End();
-            
+
             // draw the mesh
             GL.LoadIdentity();
             settings.meshMultiPreviewMaterial.SetPass(0);
             GL.wireframe = true;
             Graphics.DrawMeshNow(mesh, previewUtility.camera.worldToCameraMatrix);
             GL.wireframe = false;
-            
+
             GL.PopMatrix();
         }
 
@@ -375,7 +442,7 @@ namespace UnityEditor
                 customProperties = new MaterialPropertyBlock();
                 colorPropID = Shader.PropertyToID("_Color");
             }
-
+            
             if (settings.activeMaterial != null)
             {
                 previewUtility.camera.clearFlags = CameraClearFlags.Nothing;
@@ -414,15 +481,42 @@ namespace UnityEditor
                 else
                     previewUtility.DrawMesh(mesh, pos, rot, settings.wireMaterial, meshSubset, customProperties);
                 previewUtility.Render();
+                
                 GL.wireframe = false;
             }
 
             Unsupported.SetRenderSettingsUseFogNoDirty(oldFog);
         }
 
+        void GetSkinnedMeshRender()
+        {
+            string path = AssetDatabase.GetAssetPath(target);
+            var type = AssetDatabase.GetMainAssetTypeAtPath(path);
+            var obj = AssetDatabase.LoadAssetAtPath(path, type);
+                
+            var go = (GameObject)obj;
+            if (!go)
+                return;
+
+            var skinnedRenderer = go.GetComponent<SkinnedMeshRenderer>();
+            if (skinnedRenderer == null)
+            {
+                var skinnedMeshRenderers = go.GetComponentsInChildren<SkinnedMeshRenderer>();
+                for (int i = 0; i < skinnedMeshRenderers.Length; i++)
+                {
+                    if (skinnedMeshRenderers[i].name == target.name)
+                        skinnedRenderer = skinnedMeshRenderers[i];
+                }
+            }
+            m_Settings.skinnedMeshRenderer = skinnedRenderer;
+        }
+        
         private void DoRenderPreview()
         {
-            RenderMeshPreview(target as Mesh, m_PreviewUtility, m_Settings,-1);
+            if (m_Settings.displayMode == DisplayMode.Blendshapes)
+                RenderMeshPreview(m_Settings.skinnedMesh, m_PreviewUtility, m_Settings, -1);
+            else
+                RenderMeshPreview(target as Mesh, m_PreviewUtility, m_Settings, -1);
         }
 
         public override Texture2D RenderStaticPreview(string assetPath, UnityEngine.Object[] subAssets, int width, int height)
@@ -452,16 +546,16 @@ namespace UnityEditor
             if (m_Settings.displayMode == DisplayMode.UVChecker)
             {
                 int oldVal = m_Settings.checkerTextureMultiplier;
-                
+
                 float sliderWidth = EditorStyles.label.CalcSize(new GUIContent("--------")).x;
                 Rect sliderRect = EditorGUILayout.GetControlRect(GUILayout.Width(sliderWidth));
                 sliderRect.x += 3;
-                
-                m_Settings.checkerTextureMultiplier = (int)GUI.HorizontalSlider(sliderRect, m_Settings.checkerTextureMultiplier, 1, 30, Styles.preSlider, Styles.preSliderThumb);
-                if(oldVal != m_Settings.checkerTextureMultiplier)
+
+                m_Settings.checkerTextureMultiplier = (int)GUI.HorizontalSlider(sliderRect, m_Settings.checkerTextureMultiplier, 30, 1, Styles.preSlider, Styles.preSliderThumb);
+                if (oldVal != m_Settings.checkerTextureMultiplier)
                     m_Settings.activeMaterial.mainTextureScale = new Vector2(m_Settings.checkerTextureMultiplier, m_Settings.checkerTextureMultiplier);
             }
-            
+
             if (m_Settings.displayMode == DisplayMode.UVLayout || m_Settings.displayMode == DisplayMode.UVChecker)
             {
                 float channelDropDownWidth = EditorStyles.toolbarDropDown.CalcSize(new GUIContent("Channel 6")).x;
@@ -469,10 +563,23 @@ namespace UnityEditor
                 channelDropdownRect.y -= 1;
                 channelDropdownRect.x += 5;
                 GUIContent channel = new GUIContent("Channel " + m_Settings.activeUVChannel, Styles.uvChannelDropdown.tooltip);
-                
+
                 if (EditorGUI.DropdownButton(channelDropdownRect, channel, FocusType.Passive, EditorStyles.toolbarDropDown))
                     DoPopup(channelDropdownRect, m_UVChannels,
                         m_Settings.activeUVChannel, SetUVChannel, m_Settings.availableUVChannels);
+            }
+            
+            if (m_Settings.displayMode == DisplayMode.Blendshapes)
+            {
+                float blendshapesDropDownWidth = EditorStyles.toolbarDropDown.CalcSize(new GUIContent("Blendshapes")).x;
+                Rect blendshapesDropdownRect = EditorGUILayout.GetControlRect(GUILayout.Width(blendshapesDropDownWidth));
+                blendshapesDropdownRect.y -= 1;
+                blendshapesDropdownRect.x += 5;
+                GUIContent blendshape = new GUIContent(m_BlendShapes[m_Settings.activeBlendshape], Styles.uvChannelDropdown.tooltip);
+
+                if (EditorGUI.DropdownButton(blendshapesDropdownRect, blendshape, FocusType.Passive, EditorStyles.toolbarDropDown))
+                    DoPopup(blendshapesDropdownRect, m_BlendShapes.ToArray(),
+                        m_Settings.activeBlendshape, SetBlendshape, null);
             }
 
             // calculate width based on the longest value in display modes
@@ -482,15 +589,15 @@ namespace UnityEditor
             displayModeDropdownRect.x += 2;
             GUIContent displayModeDropdownContent = new GUIContent(m_DisplayModes[(int)m_Settings.displayMode], Styles.displayModeDropdown.tooltip);
 
-            if(EditorGUI.DropdownButton(displayModeDropdownRect, displayModeDropdownContent, FocusType.Passive, EditorStyles.toolbarDropDown))
+            if (EditorGUI.DropdownButton(displayModeDropdownRect, displayModeDropdownContent, FocusType.Passive, EditorStyles.toolbarDropDown))
                 DoPopup(displayModeDropdownRect, m_DisplayModes, (int)m_Settings.displayMode, SetDisplayMode, m_Settings.availableDisplayModes);
 
             using (new EditorGUI.DisabledScope(m_Settings.displayMode == DisplayMode.UVLayout))
-            {            
+            {
                 m_Settings.drawWire = GUILayout.Toggle(m_Settings.drawWire, Styles.wireframeToggle, EditorStyles.toolbarButton);
             }
         }
-
+        
         void OnDropDownAction(Material mat, int mode, bool flatUVs)
         {
             ResetView();
@@ -500,7 +607,7 @@ namespace UnityEditor
             m_Settings.activeMaterial.SetInt("_Mode", mode);
             m_Settings.activeMaterial.SetInt("_UVChannel", 0);
         }
-        
+
         public override void OnPreviewGUI(Rect r, GUIStyle background)
         {
             if (!ShaderUtil.hardwareSupportsRectRenderTexture)
@@ -511,29 +618,36 @@ namespace UnityEditor
                 return;
             }
 
+            if (m_Settings.displayMode == DisplayMode.Shaded)
+            {
+                EditorGUI.DrawRect(r, new Color( 0.1f, 0.1f, 0.1f, 1));
+                DoLightSettings(r);
+                r.y += 20;
+            }
+
             Init();
 
             Assembly editorAssembly = Assembly.GetAssembly(typeof(EditorGUI));
             Type guiPreview = editorAssembly.GetType("PreviewGUI");
             MethodInfo drag2D = guiPreview.GetMethod("Drag2D");
 
-            if(m_Settings.displayMode != DisplayMode.UVLayout)
+            if (Event.current.button <= 0 && m_Settings.displayMode != DisplayMode.UVLayout)
                 m_Settings.previewDir = (Vector2)drag2D?.Invoke(null, new object[] {m_Settings.previewDir, r});
-            //previewDir = PreviewGUI.Drag2D(previewDir, r);
-            
-            if (Event.current.type == EventType.ScrollWheel && m_Settings.displayMode == DisplayMode.UVLayout)
+            //m_Settings.previewDir = PreviewGUI.Drag2D(m_Settings.previewDir, r);
+
+            if (Event.current.type == EventType.ScrollWheel)
                 MeshPreviewZoom(r, Event.current);
 
-            if (Event.current.type == EventType.MouseDrag && m_Settings.displayMode == DisplayMode.UVLayout)
+            if (Event.current.type == EventType.MouseDrag && (m_Settings.displayMode == DisplayMode.UVLayout || Event.current.button == 2))
                 MeshPreviewPan(r, Event.current);
-
+            
             if (Event.current.type != EventType.Repaint)
                 return;
 
             m_PreviewUtility.BeginPreview(r, background);
-            
+
             DoRenderPreview();
-            
+
             m_PreviewUtility.EndAndDrawPreview(r);
         }
 
@@ -544,7 +658,7 @@ namespace UnityEditor
                 evt.Use();
                 return;
             }
-            float zoomDelta = (HandleUtility.niceMouseDeltaZoom * 0.5f) * 0.05f;
+            float zoomDelta = -(HandleUtility.niceMouseDeltaZoom * 0.5f) * 0.05f;
             var newZoom = m_Settings.zoomFactor + m_Settings.zoomFactor * zoomDelta;
             newZoom = Mathf.Clamp(newZoom, 0.1f, 10.0f);
 
@@ -555,11 +669,19 @@ namespace UnityEditor
             var mouseWorldPos = m_PreviewUtility.camera.ViewportToWorldPoint(mouseViewPos);
             var mouseToCamPos = m_Settings.orthoPosition - mouseWorldPos;
             var newCamPos = mouseWorldPos + mouseToCamPos * (newZoom / m_Settings.zoomFactor);
-            m_Settings.orthoPosition.x = newCamPos.x;
-            m_Settings.orthoPosition.y = newCamPos.y;
+
+            if (m_Settings.displayMode != DisplayMode.UVLayout)
+            {
+                m_PreviewUtility.camera.transform.position = new Vector3(newCamPos.x, newCamPos.y, newCamPos.z);
+            }
+            else
+            {
+                m_Settings.orthoPosition.x = newCamPos.x;
+                m_Settings.orthoPosition.y = newCamPos.y;   
+            }
 
             m_Settings.zoomFactor = newZoom;
-            evt.Use(); 
+            evt.Use();
         }
         
         void MeshPreviewPan(Rect rect, Event evt)
@@ -570,7 +692,7 @@ namespace UnityEditor
                 return;
             }
             var cam = m_PreviewUtility.camera;
-            var screenPos = cam.WorldToScreenPoint(m_Settings.orthoPosition);
+            
             // event delta is in "screen" units of the preview rect, but the
             // preview camera is rendering into a render target that could
             // be different size; have to adjust drag position to match
@@ -578,10 +700,26 @@ namespace UnityEditor
                 -evt.delta.x * cam.pixelWidth / rect.width,
                 evt.delta.y * cam.pixelHeight / rect.height,
                 0);
-            screenPos += delta;
-            var worldPos = cam.ScreenToWorldPoint(screenPos);
-            m_Settings.orthoPosition.x = worldPos.x;
-            m_Settings.orthoPosition.y = worldPos.y;
+
+            Vector3 screenPos;
+            Vector3 worldPos;
+            if (m_Settings.displayMode == DisplayMode.UVLayout)
+            {
+                screenPos = cam.WorldToScreenPoint(m_Settings.orthoPosition);
+                screenPos += delta;
+                worldPos = cam.ScreenToWorldPoint(screenPos);
+                m_Settings.orthoPosition.x = worldPos.x;
+                m_Settings.orthoPosition.y = worldPos.y;      
+            }
+
+            else
+            {
+                screenPos = cam.WorldToScreenPoint(m_Settings.pivotPositionOffset);
+                screenPos += delta;
+                worldPos = cam.ScreenToWorldPoint(screenPos) - m_Settings.pivotPositionOffset;
+                m_Settings.pivotPositionOffset += worldPos;
+            }
+
             evt.Use();
         }
 
@@ -629,9 +767,9 @@ namespace UnityEditor
             EditorGUI.DrawRect(rect, color);
             var dimmed = color * new Color(0.2f, 0.2f, 0.2f, 0.5f);
             EditorGUI.DrawRect(new Rect(rect.x, rect.y, 1, rect.height), dimmed);
-            EditorGUI.DrawRect(new Rect(rect.x + rect.width-1, rect.y, 1, rect.height), dimmed);
+            EditorGUI.DrawRect(new Rect(rect.x + rect.width - 1, rect.y, 1, rect.height), dimmed);
             EditorGUI.DrawRect(new Rect(rect.x, rect.y, rect.width, 1), dimmed);
-            EditorGUI.DrawRect(new Rect(rect.x, rect.y + rect.height-1, rect.width, 1), dimmed);
+            EditorGUI.DrawRect(new Rect(rect.x, rect.y + rect.height - 1, rect.width, 1), dimmed);
         }
 
         public override void OnInspectorGUI()
@@ -643,7 +781,7 @@ namespace UnityEditor
             {
                 var totalVertices = 0;
                 var totalIndices = 0;
-                
+
                 foreach (Mesh m in targets)
                 {
                     totalVertices += m.vertexCount;
@@ -652,12 +790,12 @@ namespace UnityEditor
                 EditorGUILayout.LabelField($"{targets.Length} meshes selected, {totalVertices} total vertices, {totalIndices} total indices");
                 return;
             }
-            
+
             Mesh mesh = target as Mesh;
             if (mesh == null)
                 return;
             var attributes = mesh.GetVertexAttributes();
-            
+
             ShowVertexInfo(mesh, attributes);
             ShowIndexInfo(mesh);
             ShowSkinInfo(mesh, attributes);
@@ -677,22 +815,35 @@ namespace UnityEditor
             EditorGUILayout.LabelField("Read/Write Enabled", mesh.isReadable.ToString());
             EditorGUI.indentLevel--;
         }
-
+        
         static void ShowBlendShapeInfo(Mesh mesh)
         {
             var blendShapeCount = mesh.blendShapeCount;
             if (blendShapeCount <= 0)
                 return;
-                
+
             EditorGUILayout.Space();
             EditorGUILayout.LabelField($"Blend Shapes: {blendShapeCount}", EditorStyles.boldLabel);
+            
+            var test = GUILayoutUtility.GetLastRect();
+            EditorGUILayout.BeginHorizontal();
 
+            var labelHeight = 25;
+
+            var scrollAreaWidth = Screen.width * 0.8f;
+            var scrollAreaHeight = mesh.blendShapeCount * labelHeight;
+            if (mesh.blendShapeCount > 10)
+                scrollAreaHeight = 10 * labelHeight;
+            
+            m_scrollPos = EditorGUILayout.BeginScrollView(m_scrollPos, GUILayout.Height(scrollAreaWidth), GUILayout.Height(scrollAreaHeight));
             EditorGUI.indentLevel++;
             for (int i = 0; i < blendShapeCount; ++i)
             {
                 EditorGUILayout.LabelField($"#{i}: {mesh.GetBlendShapeName(i)} ({mesh.GetBlendShapeFrameCount(i)} frames)");
             }
             EditorGUI.indentLevel--;
+            EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndHorizontal();
         }
 
         static void ShowSkinInfo(Mesh mesh, VertexAttributeDescriptor[] attributes)
@@ -749,6 +900,7 @@ namespace UnityEditor
                     GUILayout.BeginHorizontal();
                     var rect = GUILayoutUtility.GetRect(GUIContent.none, GUI.skin.label, GUILayout.Width(7));
                     rect.x += EditorGUI.indentLevel * 15; //@TODO: use EditorGUI.indent;
+                    //rect.x += EditorGUI.indent;
                     var tint = GetSubMeshTint(i);
                     DrawColorRect(rect, tint);
                 }
@@ -789,6 +941,7 @@ namespace UnityEditor
                 m_PreviewUtility.Cleanup();
                 m_PreviewUtility = null;
             }
+
             if (m_Settings != null)
             {
                 DestroyImmediate(m_Settings.shadedPreviewMaterial);
