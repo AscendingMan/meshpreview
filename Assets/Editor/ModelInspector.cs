@@ -2,8 +2,10 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using RenderSettings = UnityEngine.RenderSettings;
 
 namespace UnityEditor
@@ -31,6 +33,7 @@ namespace UnityEditor
 
             public Vector3 orthoPosition = new Vector3(0.0f, 0.0f, 0.0f);
             public Vector2 previewDir = new Vector2(0, 0);
+            public Vector2 lightDir = new Vector2(0, 0);
             public Vector3 pivotPositionOffset = Vector3.zero;
             public float zoomFactor = 1.0f;
             public int checkerTextureMultiplier = 10;
@@ -45,7 +48,6 @@ namespace UnityEditor
             public bool[] availableUVChannels = Enumerable.Repeat(true, 8).ToArray();
 
             public Mesh skinnedMesh;
-            public SkinnedMeshRenderer skinnedMeshRenderer;
         }
         
         private PreviewRenderUtility m_PreviewUtility;
@@ -145,9 +147,11 @@ namespace UnityEditor
 
                 m_Settings.orthoPosition = new Vector3(0.5f, 0.5f, -1);
                 m_Settings.previewDir = new Vector2(-110, 0);
+                m_Settings.lightDir = new Vector2(40, 40);
                 m_Settings.zoomFactor = 1.0f;
-                
+
                 m_Settings.skinnedMesh = new Mesh();
+                m_Settings.skinnedMesh.hideFlags = HideFlags.HideAndDontSave;
 
                 m_BlendShapes = new List<string>();
                 CheckAvailableAttributes();
@@ -220,9 +224,10 @@ namespace UnityEditor
             EditorGUIUtility.wideMode = true;
 
             Rect lightDirRect = rect;
-            lightDirRect.width *= 0.5f; 
-            Vector3 lightDir1 = m_PreviewUtility.lights[0].transform.rotation.eulerAngles;
-            m_PreviewUtility.lights[0].transform.rotation = Quaternion.Euler(EditorGUI.Vector3Field(lightDirRect, "Light Direction 1", lightDir1));
+            lightDirRect.width *= 0.5f;
+            Vector3 lightDir1 = m_PreviewUtility.camera.transform.rotation.eulerAngles;//m_PreviewUtility.lights[0].transform.rotation.eulerAngles;
+            // m_PreviewUtility.lights[0].transform.rotation = Quaternion.Euler(EditorGUI.Vector3Field(lightDirRect, "Light Direction 1", lightDir1));
+            m_PreviewUtility.camera.transform.rotation = Quaternion.Euler(EditorGUI.Vector3Field(lightDirRect, "Light Direction 1", lightDir1));
 
             lightDirRect.x += lightDirRect.width;
             Vector3 lightDir2 = m_PreviewUtility.lights[1].transform.rotation.eulerAngles;
@@ -290,8 +295,7 @@ namespace UnityEditor
                     break;
                 case DisplayMode.Blendshapes:
                     OnDropDownAction(m_Settings.shadedPreviewMaterial, 0, false);
-                    GetSkinnedMeshRender();
-                    SetSingleBlendShapeWeight();
+                    CreateSkinnedMeshRender();
                     break;
             }
         }
@@ -304,18 +308,9 @@ namespace UnityEditor
 
             m_Settings.activeBlendshape = popupIndex;
             
-            SetSingleBlendShapeWeight();
+            CreateSkinnedMeshRender();
         }
-        
-        void SetSingleBlendShapeWeight()
-        {
-            for (int i = 0; i < m_BlendShapes.Count; i++)
-                m_Settings.skinnedMeshRenderer.SetBlendShapeWeight(i, 0f);
-            
-            m_Settings.skinnedMeshRenderer.SetBlendShapeWeight(m_Settings.activeBlendshape, 100f);
-            m_Settings.skinnedMeshRenderer.BakeMesh(m_Settings.skinnedMesh);
-        }
-        
+
         internal static void RenderMeshPreview(
             Mesh mesh,
             PreviewRenderUtility previewUtility,
@@ -345,14 +340,18 @@ namespace UnityEditor
             float distance = 4.0f * halfSize;
 
             previewUtility.camera.orthographic = false;
-            Quaternion camRotation = Quaternion.Euler(-settings.previewDir.y, -settings.previewDir.x, 0);
+            Quaternion startingCamRotation = previewUtility.camera.transform.rotation;
+            Quaternion camRotation = Quaternion.identity * Quaternion.Euler(-settings.previewDir.y, -settings.previewDir.x, 0);
             Vector3 camPosition = camRotation * (Vector3.forward * -distance * settings.zoomFactor) + settings.pivotPositionOffset;
 
             renderCamTransform.position = camPosition;
             renderCamTransform.rotation = camRotation;
 
             previewUtility.lights[0].intensity = 1.4f;
+            previewUtility.lights[0].transform.rotation = Quaternion.Euler(-settings.lightDir.y, -settings.lightDir.x, 0);
             previewUtility.lights[1].intensity = 1.4f;
+            var tempRot = previewUtility.lights[1].transform.rotation.eulerAngles;
+            previewUtility.lights[1].transform.rotation = Quaternion.Euler(settings.lightDir.y, settings.lightDir.x, 0);
 
             previewUtility.ambientColor = new Color(.1f, .1f, .1f, 0);
             previewUtility.ambientColor = new Color(.1f, .1f, .1f, 0);
@@ -487,34 +486,63 @@ namespace UnityEditor
 
             Unsupported.SetRenderSettingsUseFogNoDirty(oldFog);
         }
-
-        void GetSkinnedMeshRender()
+        
+        public static Vector3 GetPosition(Matrix4x4 matrix)
         {
-            string path = AssetDatabase.GetAssetPath(target);
-            var type = AssetDatabase.GetMainAssetTypeAtPath(path);
-            var obj = AssetDatabase.LoadAssetAtPath(path, type);
-                
-            var go = (GameObject)obj;
-            if (!go)
-                return;
+            Vector3 position;
+            position.x = matrix.m03;
+            position.y = matrix.m13;
+            position.z = matrix.m23;
+            return position;
+        }
+ 
+        public static Vector3 GetScale(Matrix4x4 matrix)
+        {
+            Vector3 scale;
+            scale.x = matrix.GetColumn(0).magnitude;
+            scale.y = matrix.GetColumn(1).magnitude;
+            scale.z = matrix.GetColumn(2).magnitude;
+            return scale;
+        }
+        
+        void CreateSkinnedMeshRender()
+        { 
+            GameObject baseGOForMesh = new GameObject();
+            baseGOForMesh.hideFlags = HideFlags.HideAndDontSave;
 
-            var skinnedRenderer = go.GetComponent<SkinnedMeshRenderer>();
-            if (skinnedRenderer == null)
+            Mesh mesh = target as Mesh;
+            if (mesh == null)
+                return;
+            
+            SkinnedMeshRenderer skinnedMeshRenderer = baseGOForMesh.AddComponent(typeof(SkinnedMeshRenderer)) as SkinnedMeshRenderer;
+            
+            Transform[] boneTransforms = new Transform[mesh.bindposes.Length];
+            for (int i = 0; i < boneTransforms.Length; i++)
             {
-                var skinnedMeshRenderers = go.GetComponentsInChildren<SkinnedMeshRenderer>();
-                for (int i = 0; i < skinnedMeshRenderers.Length; i++)
-                {
-                    if (skinnedMeshRenderers[i].name == target.name)
-                        skinnedRenderer = skinnedMeshRenderers[i];
-                }
+                var bindPoseInverse = mesh.bindposes[i].inverse;
+                boneTransforms[i] = new GameObject().transform;
+                boneTransforms[i].gameObject.hideFlags = HideFlags.HideAndDontSave;
+               
+                boneTransforms[i].localScale = GetScale(bindPoseInverse);
+                boneTransforms[i].localRotation = bindPoseInverse.rotation;//ExtractRotation(bindPoseInverse);
+                boneTransforms[i].position = GetPosition(bindPoseInverse);
             }
-            m_Settings.skinnedMeshRenderer = skinnedRenderer;
+            
+            skinnedMeshRenderer.bones = boneTransforms;
+            skinnedMeshRenderer.sharedMesh = mesh;
+
+            skinnedMeshRenderer.SetBlendShapeWeight(m_Settings.activeBlendshape, 100f);
+
+            m_Settings.skinnedMesh = new Mesh();
+            // m_Settings.skinnedMesh.tangents = mesh.tangents;
+            // m_Settings.skinnedMesh.normals = mesh.normals;
+            skinnedMeshRenderer.BakeMesh(m_Settings.skinnedMesh);
         }
         
         private void DoRenderPreview()
         {
             if (m_Settings.displayMode == DisplayMode.Blendshapes)
-                RenderMeshPreview(m_Settings.skinnedMesh, m_PreviewUtility, m_Settings, -1);
+                RenderMeshPreview(m_Settings?.skinnedMesh, m_PreviewUtility, m_Settings, -1);
             else
                 RenderMeshPreview(target as Mesh, m_PreviewUtility, m_Settings, -1);
         }
@@ -608,6 +636,11 @@ namespace UnityEditor
             m_Settings.activeMaterial.SetInt("_UVChannel", 0);
         }
 
+        void ChangeLightDirection()
+        {
+            
+        }
+
         public override void OnPreviewGUI(Rect r, GUIStyle background)
         {
             if (!ShaderUtil.hardwareSupportsRectRenderTexture)
@@ -635,11 +668,20 @@ namespace UnityEditor
                 m_Settings.previewDir = (Vector2)drag2D?.Invoke(null, new object[] {m_Settings.previewDir, r});
             //m_Settings.previewDir = PreviewGUI.Drag2D(m_Settings.previewDir, r);
 
+            if (Event.current.button == 1 && m_Settings.displayMode != DisplayMode.UVLayout)
+                m_Settings.lightDir = (Vector2)drag2D?.Invoke(null, new object[] {m_Settings.lightDir, r});
+
             if (Event.current.type == EventType.ScrollWheel)
                 MeshPreviewZoom(r, Event.current);
 
             if (Event.current.type == EventType.MouseDrag && (m_Settings.displayMode == DisplayMode.UVLayout || Event.current.button == 2))
                 MeshPreviewPan(r, Event.current);
+
+            // TODO
+            // if (Event.current.commandName == EventCommandNames.FrameSelected)
+            // {
+            //     
+            // }
             
             if (Event.current.type != EventType.Repaint)
                 return;
@@ -824,9 +866,6 @@ namespace UnityEditor
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField($"Blend Shapes: {blendShapeCount}", EditorStyles.boldLabel);
-            
-            var test = GUILayoutUtility.GetLastRect();
-            EditorGUILayout.BeginHorizontal();
 
             var labelHeight = 25;
 
@@ -843,7 +882,6 @@ namespace UnityEditor
             }
             EditorGUI.indentLevel--;
             EditorGUILayout.EndScrollView();
-            EditorGUILayout.EndHorizontal();
         }
 
         static void ShowSkinInfo(Mesh mesh, VertexAttributeDescriptor[] attributes)
