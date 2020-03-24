@@ -2,12 +2,8 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Text;
-using UnityEditor.SceneManagement;
-using Object = System.Object;
 using RenderSettings = UnityEngine.RenderSettings;
 
 namespace UnityEditor
@@ -48,8 +44,6 @@ namespace UnityEditor
 
             public bool[] availableDisplayModes = Enumerable.Repeat(true, 7).ToArray();
             public bool[] availableUVChannels = Enumerable.Repeat(true, 8).ToArray();
-
-            public GameObject skinnedMeshGameObject;
         }
         
         private PreviewRenderUtility m_PreviewUtility;
@@ -57,9 +51,9 @@ namespace UnityEditor
 
         private Texture2D m_CheckeredTexture;
         
-        static Vector2 m_scrollPos;
-
-        private GameObject m_BaseGameObjectForSkinnedMeshRenderer;
+        static Vector2 m_ScrollPos;
+        
+        public Mesh m_BakedSkinnedMesh;
 
         private static string[] m_DisplayModes =
         {
@@ -258,16 +252,8 @@ namespace UnityEditor
 
         void DestroySkinnedMeshRendererAndRelatedObjects()
         {
-            if (m_BaseGameObjectForSkinnedMeshRenderer)
-            {
-                DestroyImmediate(m_BaseGameObjectForSkinnedMeshRenderer);
-            }
-
-            if (m_Settings.skinnedMeshGameObject)
-            {
-                DestroyImmediate(m_Settings.skinnedMeshGameObject.GetComponent<MeshFilter>().sharedMesh);
-                DestroyImmediate(m_Settings.skinnedMeshGameObject);
-            }
+            if (m_BakedSkinnedMesh)
+                DestroyImmediate(m_BakedSkinnedMesh);
         }
 
         private void SetDisplayMode(object data)
@@ -304,7 +290,7 @@ namespace UnityEditor
                     break;
                 case DisplayMode.Blendshapes:
                     OnDropDownAction(m_Settings.shadedPreviewMaterial, 0, false);
-                    CreateSkinnedMeshRenderer();
+                    BakeSkinnedMesh();
                     break;
             }
         }
@@ -318,7 +304,7 @@ namespace UnityEditor
             m_Settings.activeBlendshape = popupIndex;
 
             DestroySkinnedMeshRendererAndRelatedObjects();
-            CreateSkinnedMeshRenderer();
+            BakeSkinnedMesh();
         }
 
         internal static void RenderMeshPreview(
@@ -359,7 +345,6 @@ namespace UnityEditor
             previewUtility.lights[0].intensity = 1.4f;
             previewUtility.lights[0].transform.rotation = Quaternion.Euler(-settings.lightDir.y, -settings.lightDir.x, 0);
             previewUtility.lights[1].intensity = 1.4f;
-            var tempRot = previewUtility.lights[1].transform.rotation.eulerAngles;
             previewUtility.lights[1].transform.rotation = Quaternion.Euler(settings.lightDir.y, settings.lightDir.x, 0);
 
             previewUtility.ambientColor = new Color(.1f, .1f, .1f, 0);
@@ -494,25 +479,7 @@ namespace UnityEditor
 
             Unsupported.SetRenderSettingsUseFogNoDirty(oldFog);
         }
-        
-        public static Vector3 GetPosition(Matrix4x4 matrix)
-        {
-            Vector3 position;
-            position.x = matrix.m03;
-            position.y = matrix.m13;
-            position.z = matrix.m23;
-            return position;
-        }
- 
-        public static Vector3 GetScale(Matrix4x4 matrix)
-        {
-            Vector3 scale;
-            scale.x = matrix.GetColumn(0).magnitude;
-            scale.y = matrix.GetColumn(1).magnitude;
-            scale.z = matrix.GetColumn(2).magnitude;
-            return scale;
-        }
-        
+
         static void SetTransformMatrix(Transform tr, Matrix4x4 mat)
         {
             // extract position
@@ -534,28 +501,24 @@ namespace UnityEditor
             tr.localScale = scale;
         }
 
-        void CreateSkinnedMeshRenderer()
+        void BakeSkinnedMesh()
         {
             Mesh mesh = target as Mesh;
             if (mesh == null)
                 return;
             
-            m_BaseGameObjectForSkinnedMeshRenderer = new GameObject {hideFlags = HideFlags.HideAndDontSave};
-            
-            SkinnedMeshRenderer skinnedMeshRenderer = m_BaseGameObjectForSkinnedMeshRenderer.AddComponent<SkinnedMeshRenderer>();
+            var baseGameObjectForSkinnedMeshRenderer = new GameObject {hideFlags = HideFlags.HideAndDontSave};
+            SkinnedMeshRenderer skinnedMeshRenderer = baseGameObjectForSkinnedMeshRenderer.AddComponent<SkinnedMeshRenderer>();
             skinnedMeshRenderer.hideFlags = HideFlags.HideAndDontSave;
 
-            // setting up a mesh with a proper game object creation chain so it could be destroyed later
-            m_Settings.skinnedMeshGameObject = new GameObject {hideFlags = HideFlags.HideAndDontSave};
-            var meshFilter = m_Settings.skinnedMeshGameObject.AddComponent<MeshFilter>();
-            meshFilter.hideFlags = HideFlags.HideAndDontSave;
-            meshFilter.sharedMesh = new Mesh(){hideFlags = HideFlags.HideAndDontSave};
+            m_BakedSkinnedMesh = new Mesh(){hideFlags = HideFlags.HideAndDontSave};
 
             var isRigid = mesh.blendShapeCount > 0 && mesh.bindposes.Length == 0;
 
+            Transform[] boneTransforms = new Transform[mesh.bindposes.Length];
+
             if (!isRigid)
             {
-                Transform[] boneTransforms = new Transform[mesh.bindposes.Length];
                 for (int i = 0; i < boneTransforms.Length; i++)
                 {
                     var bindPoseInverse = mesh.bindposes[i].inverse;
@@ -569,19 +532,27 @@ namespace UnityEditor
             
             skinnedMeshRenderer.sharedMesh = mesh;
             skinnedMeshRenderer.SetBlendShapeWeight(m_Settings.activeBlendshape, 100f);
-            skinnedMeshRenderer.BakeMesh(meshFilter.sharedMesh);
+            skinnedMeshRenderer.BakeMesh(m_BakedSkinnedMesh);
             
             if(isRigid)
-                meshFilter.sharedMesh.RecalculateBounds(); 
+                m_BakedSkinnedMesh.RecalculateBounds(); 
             
-            // make sure to dereference the Editor.target Mesh here
             skinnedMeshRenderer.sharedMesh = null;
+            
+            DestroyImmediate(skinnedMeshRenderer);
+            DestroyImmediate(baseGameObjectForSkinnedMeshRenderer);
+            
+            if (!isRigid)
+            {
+                for (int i = 0; i < boneTransforms.Length; i++)
+                    DestroyImmediate(boneTransforms[i].gameObject);
+            }
         }
         
         private void DoRenderPreview()
         {
             if (m_Settings.displayMode == DisplayMode.Blendshapes)
-                RenderMeshPreview(m_Settings.skinnedMeshGameObject.GetComponent<MeshFilter>().sharedMesh, m_PreviewUtility, m_Settings, -1);
+                RenderMeshPreview(m_BakedSkinnedMesh, m_PreviewUtility, m_Settings, -1);
             else
                 RenderMeshPreview(target as Mesh, m_PreviewUtility, m_Settings, -1);
         }
@@ -677,9 +648,11 @@ namespace UnityEditor
 
         public override void OnPreviewGUI(Rect r, GUIStyle background)
         {
+            var evt = Event.current;
+
             if (!ShaderUtil.hardwareSupportsRectRenderTexture)
             {
-                if (Event.current.type == EventType.Repaint)
+                if (evt.type == EventType.Repaint)
                     EditorGUI.DropShadowLabel(new Rect(r.x, r.y, r.width, 40),
                         "Mesh preview requires\nrender texture support");
                 return;
@@ -691,28 +664,25 @@ namespace UnityEditor
             Type guiPreview = editorAssembly.GetType("PreviewGUI");
             MethodInfo drag2D = guiPreview.GetMethod("Drag2D");
             
-            if (Event.current.commandName == "FrameSelected") // compare against EventCommandNames.FrameSelected when on trunk
+            if ((evt.type == EventType.ValidateCommand || evt.type == EventType.ExecuteCommand) && evt.commandName == "FrameSelected") // compare against EventCommandNames.FrameSelected when on trunk
             {
                 FrameObject();
-                
-                if(Event.current.type != EventType.Repaint && Event.current.type != EventType.Layout)
-                    Event.current.Use();
+                evt.Use();
             }
             
-            if (Event.current.button <= 0 && m_Settings.displayMode != DisplayMode.UVLayout)
+            if (evt.button <= 0 && m_Settings.displayMode != DisplayMode.UVLayout)
                 m_Settings.previewDir = (Vector2)drag2D?.Invoke(null, new object[] {m_Settings.previewDir, r});
-            //m_Settings.previewDir = PreviewGUI.Drag2D(m_Settings.previewDir, r);
 
-            if (Event.current.button == 1 && m_Settings.displayMode != DisplayMode.UVLayout)
+            if (evt.button == 1 && m_Settings.displayMode != DisplayMode.UVLayout)
                 m_Settings.lightDir = (Vector2)drag2D?.Invoke(null, new object[] {m_Settings.lightDir, r});
 
-            if (Event.current.type == EventType.ScrollWheel)
-                MeshPreviewZoom(r, Event.current);
+            if (evt.type == EventType.ScrollWheel)
+                MeshPreviewZoom(r, evt);
 
-            if (Event.current.type == EventType.MouseDrag && (m_Settings.displayMode == DisplayMode.UVLayout || Event.current.button == 2))
-                MeshPreviewPan(r, Event.current);
+            if (evt.type == EventType.MouseDrag && (m_Settings.displayMode == DisplayMode.UVLayout || evt.button == 2))
+                MeshPreviewPan(r, evt);
             
-            if (Event.current.type != EventType.Repaint)
+            if (evt.type != EventType.Repaint)
                 return;
 
             m_PreviewUtility.BeginPreview(r, background);
@@ -896,21 +866,17 @@ namespace UnityEditor
             EditorGUILayout.Space();
             EditorGUILayout.LabelField($"Blend Shapes: {blendShapeCount}", EditorStyles.boldLabel);
 
-            var labelHeight = EditorGUIUtility.singleLineHeight;
-
-            var scrollAreaWidth = Screen.width * 0.8f;
-            var scrollAreaHeight = blendShapeCount * labelHeight;
-            if (blendShapeCount > 10)
-                scrollAreaHeight = 10 * labelHeight;
-            
-            m_scrollPos = EditorGUILayout.BeginScrollView(m_scrollPos, GUILayout.Height(scrollAreaWidth), GUILayout.Height(scrollAreaHeight));
+            var showScroll = blendShapeCount > 10;
+            if (showScroll)
+                m_ScrollPos = EditorGUILayout.BeginScrollView(m_ScrollPos, GUILayout.Height(10 * EditorGUIUtility.singleLineHeight));
             EditorGUI.indentLevel++;
             for (int i = 0; i < blendShapeCount; ++i)
             {
                 EditorGUILayout.LabelField($"#{i}: {mesh.GetBlendShapeName(i)} ({mesh.GetBlendShapeFrameCount(i)} frames)");
             }
             EditorGUI.indentLevel--;
-            EditorGUILayout.EndScrollView();
+            if (showScroll)
+                EditorGUILayout.EndScrollView();
         }
 
         static void ShowSkinInfo(Mesh mesh, VertexAttributeDescriptor[] attributes)
