@@ -144,8 +144,8 @@ namespace UnityEditor
                 m_Settings.activeMaterial = m_Settings.shadedPreviewMaterial;
 
                 m_Settings.orthoPosition = new Vector3(0.5f, 0.5f, -1);
-                m_Settings.previewDir = new Vector2(-110, 0);
-                m_Settings.lightDir = new Vector2(40, 40);
+                m_Settings.previewDir = new Vector2(130, 0);
+                m_Settings.lightDir = new Vector2(-40, -40);
                 m_Settings.zoomFactor = 1.0f;
 
                 m_BlendShapes = new List<string>();
@@ -229,6 +229,8 @@ namespace UnityEditor
             for (int i = 0; i < elements.Length; i++)
             {
                 var element = elements[i];
+		 if (element == m_DisplayModes[(int)DisplayMode.Blendshapes] && Selection.count > 1)
+			continue;
                 
                 if (disabledItems == null || disabledItems[i])
                     menu.AddItem(new GUIContent(element), i == selectedIndex, func, i);
@@ -336,15 +338,15 @@ namespace UnityEditor
             float distance = 4.0f * halfSize;
 
             previewUtility.camera.orthographic = false;
-            Quaternion camRotation = Quaternion.identity * Quaternion.Euler(-settings.previewDir.y, -settings.previewDir.x, renderCamTransform.rotation.z);
+            Quaternion camRotation = Quaternion.identity;
             Vector3 camPosition = camRotation * Vector3.forward * (-distance * settings.zoomFactor) + settings.pivotPositionOffset;
 
             renderCamTransform.position = camPosition;
             renderCamTransform.rotation = camRotation;
 
-            previewUtility.lights[0].intensity = 1.4f;
+            previewUtility.lights[0].intensity = 1.1f;
             previewUtility.lights[0].transform.rotation = Quaternion.Euler(-settings.lightDir.y, -settings.lightDir.x, 0);
-            previewUtility.lights[1].intensity = 1.4f;
+            previewUtility.lights[1].intensity = 1.1f;
             previewUtility.lights[1].transform.rotation = Quaternion.Euler(settings.lightDir.y, settings.lightDir.x, 0);
 
             previewUtility.ambientColor = new Color(.1f, .1f, .1f, 0);
@@ -694,11 +696,6 @@ namespace UnityEditor
 
         void MeshPreviewZoom(Rect rect, Event evt)
         {
-            if (!rect.Contains(evt.mousePosition))
-            {
-                evt.Use();
-                return;
-            }
             float zoomDelta = -(HandleUtility.niceMouseDeltaZoom * 0.5f) * 0.05f;
             var newZoom = m_Settings.zoomFactor + m_Settings.zoomFactor * zoomDelta;
             newZoom = Mathf.Clamp(newZoom, 0.1f, 10.0f);
@@ -727,11 +724,6 @@ namespace UnityEditor
         
         void MeshPreviewPan(Rect rect, Event evt)
         {
-            if (!rect.Contains(evt.mousePosition))
-            {
-                evt.Use();
-                return;
-            }
             var cam = m_PreviewUtility.camera;
             
             // event delta is in "screen" units of the preview rect, but the
