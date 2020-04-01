@@ -8,6 +8,13 @@ The top part of the Inspector was updated to display information about mesh data
 
 ![DataPreview]
 
+## Preview 3D Controls
+Middle Mouse Button (Scroll Wheel) click and hold - <b>Pan</b>  
+Scroll Wheel - <b>Zoom</b>  
+Left Mouse Button - <b>Rotate</b>  
+Right Mouse Button - <b>Rotate Directional lights</b>  
+F - <b>Focus object</b> (resets pan and zoom, but not rotation)  
+
 The Mesh Preview window allows meshes to be viewed in one of the following ways:
 
 ## Shaded
@@ -48,7 +55,13 @@ Preview Mesh Normals. We've opted to not displays normals as tiny vectors poking
 
 Preview Mesh Tangents. We've opted to not displays tangents as tiny vectors poking out of vertices, since it feels like without full-on navigation inside the preview window, they would just be a mess for non-trivial meshes.
 
-![TangentPreview]
+![TangentPreview]  
+
+## Blendshapes  
+
+Preview Mesh Blendshapes. An additional drop down is displayed when this option is selected where you can choose which blendshape to display.
+
+![BlendShapePreview]
 
 [DataPreview]: https://i.imgur.com/WYDqCZ2.png
 [ShadedPreview]: https://i.imgur.com/fqyTnQd.png
@@ -58,4 +71,5 @@ Preview Mesh Tangents. We've opted to not displays tangents as tiny vectors poki
 [VertColorPreview]: https://i.imgur.com/2dwvYLX.png
 [NormalPreview]: https://i.imgur.com/0bnRfFs.png
 [TangentPreview]: https://i.imgur.com/G30W4LL.png
+[BlendShapePreview]: https://i.imgur.com/hsT9XG3.png
 
