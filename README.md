@@ -71,5 +71,5 @@ Preview Mesh Blendshapes. An additional drop down is displayed when this option 
 [VertColorPreview]: https://i.imgur.com/2dwvYLX.png
 [NormalPreview]: https://i.imgur.com/0bnRfFs.png
 [TangentPreview]: https://i.imgur.com/G30W4LL.png
-[BlendShapePreview]: https://i.imgur.com/hsT9XG3.png
+[BlendShapePreview]: https://i.imgur.com/hsT9XG3.png?1
 
